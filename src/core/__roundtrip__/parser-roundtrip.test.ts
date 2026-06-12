@@ -63,11 +63,27 @@ describe('round-trip: VJ encoder → CKPlayer2.0 Radiant6CanadaMessageParser', (
     const actions = events.map((e) => e.action);
     expect(actions).toEqual(expect.arrayContaining(['SCAN_RECEIVED', 'ITEM_ADDED', 'POLEDISP_UPDATED']));
     const itemAdded = events.find((e) => e.action === 'ITEM_ADDED')!;
-    // Parser ≥ LIFT-2358 carries the barcode as `upc` on ITEM_ADDED
-    // (SCAN_RECEIVED still uses `code`).
-    expect(itemAdded.data.upc).toBe('049000000443');
+    // ITEM_ADDED carries the barcode as `upc` since omni commit db29599
+    // (2026-06-04, renamed from `code`); the fallback accepts pre-rename
+    // checkouts. SCAN_RECEIVED uses `code` in both generations.
+    expect(itemAdded.data.upc ?? itemAdded.data.code).toBe('049000000443');
     expect(itemAdded.data.description).toBe('Coke');
     expect(itemAdded.data.price).toBeCloseTo(1.69, 5);
+  });
+
+  it('itemAdd with embedded comma + fr decimal roundtrips the `,,` escaping through the real parser', () => {
+    const ctx = vjCtx('fr');
+    const events = Radiant6CanadaMessageParser.parseLine(
+      SOURCE,
+      enc.itemAdd({ tx: 24, lineNumber: 1, barcode: '060410012345', description: 'CHIPS, BBQ 200G', priceCents: 194, quantity: 1, locale: 'fr' }),
+      ctx,
+    )!;
+    const itemAdded = events.find((e) => e.action === 'ITEM_ADDED')!;
+    expect(itemAdded.data.upc ?? itemAdded.data.code).toBe('060410012345');
+    // The comma survives unescaped: the parser masks `,,`, splits on `,`, restores.
+    expect(itemAdded.data.description).toBe('CHIPS, BBQ 200G');
+    // And the fr decimal `UnitPrice=1,,94` decodes back to 1.94.
+    expect(itemAdded.data.price).toBeCloseTo(1.94, 5);
   });
 
   it('itemVoid / priceOverride / qtyChange decode to their actions', () => {

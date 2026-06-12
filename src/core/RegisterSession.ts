@@ -139,83 +139,101 @@ export class RegisterSession {
     ];
   }
 
+  /**
+   * Wrap a mutator's wire output with the lane-open preamble so the convention
+   * is structural rather than remembered per-method. `build` is a thunk (not
+   * pre-built messages) so the opening events are encoded — and the opening
+   * pole balance captured — before the action mutates the basket or stamps
+   * its own EventTime.
+   */
+  private emit(build: () => WireMessage[]): WireMessage[] {
+    return [...this.ensureStarted(), ...build()];
+  }
+
   open(): WireMessage[] {
     return this.ensureStarted();
   }
 
   addItem(input: AddItemInput): WireMessage[] {
-    const messages = this.ensureStarted();
-    const li = this.basket.addItem(input);
-    if (this.isBulloch) {
-      messages.push(this.bullochItemMessage(li.code, li.description, li.quantity, li.unitPriceCents));
-      return messages;
-    }
-    messages.push({
-      channel: 'vj',
-      data: this.encoder.itemAdd({
-        tx: this.tx,
-        lineNumber: li.lineNumber,
-        barcode: li.code,
-        description: li.description,
-        priceCents: li.unitPriceCents,
-        quantity: li.quantity,
-        locale: this.locale,
-      }),
+    return this.emit(() => {
+      const li = this.basket.addItem(input);
+      if (this.isBulloch) {
+        return [this.bullochItemMessage(li.code, li.description, li.quantity, li.unitPriceCents)];
+      }
+      return [
+        {
+          channel: 'vj',
+          data: this.encoder.itemAdd({
+            tx: this.tx,
+            lineNumber: li.lineNumber,
+            barcode: li.code,
+            description: li.description,
+            priceCents: li.unitPriceCents,
+            quantity: li.quantity,
+            locale: this.locale,
+          }),
+        },
+        { channel: 'pole', data: this.encoder.poleItem(li.quantity, li.description, li.unitPriceCents, this.locale) },
+        this.balanceMessage(),
+      ];
     });
-    messages.push({ channel: 'pole', data: this.encoder.poleItem(li.quantity, li.description, li.unitPriceCents, this.locale) });
-    messages.push(this.balanceMessage());
-    return messages;
   }
 
   voidLine(lineNumber: number): WireMessage[] {
-    if (this.isBulloch) {
-      const description = this.basket.find(lineNumber)?.description ?? '';
+    return this.emit(() => {
+      if (this.isBulloch) {
+        const description = this.basket.find(lineNumber)?.description ?? '';
+        this.basket.voidItem(lineNumber);
+        return [this.bullochVoidMessage(description)];
+      }
       this.basket.voidItem(lineNumber);
-      return [this.bullochVoidMessage(description)];
-    }
-    this.basket.voidItem(lineNumber);
-    return [
-      { channel: 'vj', data: this.encoder.itemVoid({ tx: this.tx, lineNumber }) },
-      this.balanceMessage(),
-    ];
+      return [
+        { channel: 'vj', data: this.encoder.itemVoid({ tx: this.tx, lineNumber }) },
+        this.balanceMessage(),
+      ];
+    });
   }
 
   setQuantity(lineNumber: number, quantity: number): WireMessage[] {
-    const li = this.basket.find(lineNumber);
-    const oldQuantity = li?.quantity ?? 1;
-    const description = li?.description ?? '';
-    this.basket.setQuantity(lineNumber, quantity);
-    const updated = this.basket.find(lineNumber);
-    if (this.isBulloch) {
-      // Legacy Bulloch parity: a quantity change is a void of the old line
-      // followed by a re-add at the new quantity (both on the pole).
+    return this.emit(() => {
+      const li = this.basket.find(lineNumber);
+      const oldQuantity = li?.quantity ?? 1;
+      const description = li?.description ?? '';
+      this.basket.setQuantity(lineNumber, quantity);
+      const updated = this.basket.find(lineNumber);
+      if (this.isBulloch) {
+        // Legacy Bulloch parity: a quantity change is a void of the old line
+        // followed by a re-add at the new quantity (both on the pole).
+        return [
+          this.bullochVoidMessage(description),
+          this.bullochItemMessage(updated?.code ?? '', description, updated?.quantity ?? quantity, updated?.unitPriceCents ?? 0),
+        ];
+      }
+      const extended = updated?.extendedCents() ?? 0;
       return [
-        this.bullochVoidMessage(description),
-        this.bullochItemMessage(updated?.code ?? '', description, updated?.quantity ?? quantity, updated?.unitPriceCents ?? 0),
+        { channel: 'vj', data: this.encoder.qtyChange({ tx: this.tx, lineNumber, oldQuantity, newQuantity: quantity, extendedPriceCents: extended, locale: this.locale }) },
+        this.balanceMessage(),
       ];
-    }
-    const extended = updated?.extendedCents() ?? 0;
-    return [
-      { channel: 'vj', data: this.encoder.qtyChange({ tx: this.tx, lineNumber, oldQuantity, newQuantity: quantity, extendedPriceCents: extended, locale: this.locale }) },
-      this.balanceMessage(),
-    ];
+    });
   }
 
   setPrice(lineNumber: number, priceCents: number): WireMessage[] {
-    const description = this.basket.find(lineNumber)?.description ?? '';
-    this.basket.setPrice(lineNumber, priceCents);
-    const updated = this.basket.find(lineNumber);
-    if (this.isBulloch) {
-      // Legacy Bulloch parity: a price change is a void + re-add at the new price.
+    return this.emit(() => {
+      const description = this.basket.find(lineNumber)?.description ?? '';
+      this.basket.setPrice(lineNumber, priceCents);
+      const updated = this.basket.find(lineNumber);
+      if (this.isBulloch) {
+        // Legacy Bulloch parity: a price change is a void + re-add at the new price.
+        return [
+          this.bullochVoidMessage(description),
+          this.bullochItemMessage(updated?.code ?? '', description, updated?.quantity ?? 1, priceCents),
+        ];
+      }
       return [
-        this.bullochVoidMessage(description),
-        this.bullochItemMessage(updated?.code ?? '', description, updated?.quantity ?? 1, priceCents),
+        { channel: 'vj', data: this.encoder.priceOverride({ tx: this.tx, lineNumber, newUnitPriceCents: priceCents, locale: this.locale }) },
+        this.balanceMessage(),
       ];
-    }
-    return [
-      { channel: 'vj', data: this.encoder.priceOverride({ tx: this.tx, lineNumber, newUnitPriceCents: priceCents, locale: this.locale }) },
-      this.balanceMessage(),
-    ];
+    });
   }
 
   /**
@@ -224,21 +242,21 @@ export class RegisterSession {
    * the next sale.
    */
   voidTicket(): WireMessage[] {
-    const messages = this.ensureStarted();
-    if (this.isBulloch) {
-      messages.push({ channel: 'pole', data: this.bulloch.clearSale() });
+    return this.emit(() => {
+      if (this.isBulloch) {
+        const cleared: WireMessage[] = [{ channel: 'pole', data: this.bulloch.clearSale() }];
+        this.basket = new Basket({ taxRateBps: this.taxRateBps });
+        this.tx += 1;
+        this.started = false;
+        return cleared;
+      }
+      const end: WireMessage = { channel: 'vj', data: this.encoder.basketEnd({ tx: this.tx, type: 'Sales', completion: 'Cancelled' }) };
       this.basket = new Basket({ taxRateBps: this.taxRateBps });
+      const balance = this.balanceMessage(); // pole balance now 0
       this.tx += 1;
       this.started = false;
-      return messages;
-    }
-    messages.push({ channel: 'vj', data: this.encoder.basketEnd({ tx: this.tx, type: 'Sales', completion: 'Cancelled' }) });
-
-    this.basket = new Basket({ taxRateBps: this.taxRateBps });
-    messages.push(this.balanceMessage()); // pole balance now 0
-    this.tx += 1;
-    this.started = false;
-    return messages;
+      return [end, balance];
+    });
   }
 
   /**
@@ -247,9 +265,9 @@ export class RegisterSession {
    */
   loyalty(cardNumber: string, cardId?: string): WireMessage[] {
     if (this.isBulloch) return [];
-    const messages = this.ensureStarted();
-    messages.push({ channel: 'vj', data: this.encoder.loyalty({ tx: this.tx, cardNumber, cardId }) });
-    return messages;
+    return this.emit(() => [
+      { channel: 'vj', data: this.encoder.loyalty({ tx: this.tx, cardNumber, cardId }) },
+    ]);
   }
 
   /**
@@ -258,49 +276,53 @@ export class RegisterSession {
    * the change (1008) and basket end (1002). Resets for the next sale.
    */
   tender(kind: TenderKind, amountCents?: number): WireMessage[] {
-    const messages = this.ensureStarted();
-    const exactTotal = this.basket.totalCents();
-    const roundedTotal = this.basket.roundCashTotal();
+    return this.emit(() => {
+      const exactTotal = this.basket.totalCents();
+      const roundedTotal = this.basket.roundCashTotal();
 
-    let tendered: number;
-    if (kind === 'cash-exact') tendered = roundedTotal;
-    else if (kind === 'next-dollar') tendered = this.basket.nextDollarCents();
-    else tendered = amountCents ?? roundedTotal;
+      let tendered: number;
+      if (kind === 'cash-exact') tendered = roundedTotal;
+      else if (kind === 'next-dollar') tendered = this.basket.nextDollarCents();
+      else tendered = amountCents ?? roundedTotal;
 
-    const change = Math.max(0, tendered - roundedTotal);
-    const roundingDelta = roundedTotal - exactTotal;
+      const change = Math.max(0, tendered - roundedTotal);
+      const roundingDelta = roundedTotal - exactTotal;
 
-    if (this.isBulloch) {
-      // Bulloch closes the sale with a single pole [C200] line (no VJ, no
-      // Arrondir event). TOTAL is the exact basket total; CHNG is the change.
-      messages.push({
-        channel: 'pole',
-        data: this.bulloch.saleClose({
-          tx: this.tx,
-          totalCents: exactTotal,
-          changeCents: change,
-          taxCents: this.basket.taxCents(),
-        }),
-      });
+      if (this.isBulloch) {
+        // Bulloch closes the sale with a single pole [C200] line (no VJ, no
+        // Arrondir event). TOTAL is the exact basket total; CHNG is the change.
+        const close: WireMessage[] = [{
+          channel: 'pole',
+          data: this.bulloch.saleClose({
+            tx: this.tx,
+            totalCents: exactTotal,
+            changeCents: change,
+            taxCents: this.basket.taxCents(),
+          }),
+        }];
+        this.basket = new Basket({ taxRateBps: this.taxRateBps });
+        this.tx += 1;
+        this.started = false;
+        return close;
+      }
+
+      const rounding: WireMessage[] = roundingDelta !== 0
+        ? [{ channel: 'vj', data: this.encoder.rounding({ tx: this.tx, amountCents: roundingDelta, locale: this.locale }) }]
+        : [];
+      const sale: WireMessage[] = [
+        ...rounding,
+        { channel: 'vj', data: this.encoder.tender({ tx: this.tx, amountCents: tendered, mopDescription: 'Cash', locale: this.locale }) },
+        { channel: 'pole', data: this.encoder.poleChange(change, this.locale) },
+        { channel: 'vj', data: this.encoder.change({ tx: this.tx, amountCents: change, locale: this.locale }) },
+        { channel: 'vj', data: this.encoder.basketEnd({ tx: this.tx, type: 'Sales', completion: 'Completed' }) },
+      ];
+
+      // Reset for the next sale.
       this.basket = new Basket({ taxRateBps: this.taxRateBps });
       this.tx += 1;
       this.started = false;
-      return messages;
-    }
-
-    if (roundingDelta !== 0) {
-      messages.push({ channel: 'vj', data: this.encoder.rounding({ tx: this.tx, amountCents: roundingDelta, locale: this.locale }) });
-    }
-    messages.push({ channel: 'vj', data: this.encoder.tender({ tx: this.tx, amountCents: tendered, mopDescription: 'Cash', locale: this.locale }) });
-    messages.push({ channel: 'pole', data: this.encoder.poleChange(change, this.locale) });
-    messages.push({ channel: 'vj', data: this.encoder.change({ tx: this.tx, amountCents: change, locale: this.locale }) });
-    messages.push({ channel: 'vj', data: this.encoder.basketEnd({ tx: this.tx, type: 'Sales', completion: 'Completed' }) });
-
-    // Reset for the next sale.
-    this.basket = new Basket({ taxRateBps: this.taxRateBps });
-    this.tx += 1;
-    this.started = false;
-    return messages;
+      return sale;
+    });
   }
 
   snapshot(): SessionSnapshot {

@@ -63,6 +63,13 @@ describe('RegisterSession', () => {
     expect(next.some((m) => m.data.includes('EventId=1001'))).toBe(false);
   });
 
+  it('setQuantity as the first action opens the lane first (1001 + 1009 precede 1014)', () => {
+    const s = new RegisterSession();
+    const msgs = s.setQuantity(1, 2);
+    const ids = msgs.filter((m) => m.channel === 'vj').map((m) => m.data.match(/EventId=(\d+)/)?.[1]);
+    expect(ids).toEqual(['1001', '1009', '1014']);
+  });
+
   it('cash-exact tender emits Arrondir rounding, tender, change, basketEnd and resets', () => {
     const s = new RegisterSession({ taxRateBps: 500 });
     s.addItem({ code: 'a', description: 'A', priceCents: 169 }); // total 177 → rounds to 175

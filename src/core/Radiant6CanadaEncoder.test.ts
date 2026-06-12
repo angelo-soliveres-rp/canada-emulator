@@ -115,33 +115,34 @@ describe('Radiant6CanadaEncoder — VJ value escaping (legacy `,,` contract)', (
     expect(op).toContain('OperatorName=Young,, Brianna');
   });
 
-  it('emits negative amounts parenthesized (legacy fixture `Amount=(0,,02)`)', () => {
+  it('rounding (1022) negatives stay parenthesized (legacy fixture `Amount=(0,,02)`)', () => {
     expect(enc().rounding({ tx: 9, amountCents: -2, locale: 'fr' })).toContain('Amount=(0,,02)');
     expect(enc().rounding({ tx: 9, amountCents: -2 })).toContain('Amount=(0.02)');
   });
 
-  it('survives the player parseKeyValues algorithm (mask `,,` → split `,` → restore)', () => {
+  it('negative ExtendedPrice / NewUnitPrice are parenthesized (player un-parenthesizes them)', () => {
+    const q = enc().qtyChange({ tx: 1, lineNumber: 2, oldQuantity: 2, newQuantity: 1, extendedPriceCents: -300 });
+    expect(q).toContain('ExtendedPrice=(3.00)');
+    expect(enc().priceOverride({ tx: 1, lineNumber: 2, newUnitPriceCents: -99 })).toContain('NewUnitPrice=(0.99)');
+  });
+
+  it('negative tender / change Amount use a leading minus (player parses them directly)', () => {
+    expect(enc().tender({ tx: 1, amountCents: -500, mopDescription: 'Cash' })).toContain('Amount=-5.00');
+    expect(enc().change({ tx: 1, amountCents: -500, locale: 'fr' })).toContain('Amount=-5,,00');
+  });
+
+  it('collapses CR/LF in values to a single space (one record per wire line)', () => {
     const line = enc().itemAdd({
       tx: 1,
       lineNumber: 1,
       barcode: 'x',
-      description: 'CHIPS, BBQ 200G',
-      priceCents: 194,
+      description: 'AB\nCD',
+      priceCents: 100,
       quantity: 1,
-      locale: 'fr',
     });
-    const SENTINEL = '\u0001';
-    const masked = line.trim().replace(/,,/g, SENTINEL);
-    const parsed = new Map<string, string>();
-    for (const piece of masked.split(',')) {
-      const restored = piece.split(SENTINEL).join(',');
-      const eq = restored.indexOf('=');
-      if (eq <= 0) continue;
-      parsed.set(restored.slice(0, eq), restored.slice(eq + 1));
-    }
-    expect(parsed.get('Description')).toBe('CHIPS, BBQ 200G');
-    expect(parsed.get('UnitPrice')).toBe('1,94');
-    expect(parsed.get('ExtendedPrice')).toBe('1,94');
+    expect(line).toContain('Description=AB CD');
+    expect(line.endsWith('\r\n')).toBe(true);
+    expect(line.indexOf('\r')).toBe(line.length - 2); // no CR/LF inside the record
   });
 });
 
@@ -188,15 +189,41 @@ describe('Radiant6CanadaEncoder — pole display windows (20-char)', () => {
     expect(bal.length).toBe(20);
   });
 
-  it('oversized amounts trim the label, never the amount, and never exceed 20 chars', () => {
+  it('oversized fr change keeps the full label and tail-truncates (FR_CHANGE still matches)', () => {
     const chg = enc().poleChange(1000000, 'fr'); // `10000,00$` = 9 > field width 8
+    expect(chg).toBe('Monnaie due:10000,00'); // drops only the trailing `$`
     expect(chg.length).toBe(20);
-    expect(chg.endsWith('10000,00$')).toBe(true);
+    const m = /Monnaie due:([\x20-\x7E]{8})/.exec(chg);
+    expect(m?.[1]).toBe('10000,00'); // player parses the correct value
   });
 
-  it('negative pole change is parenthesized (legacy fixture `Monnaie due: (3,00$)`)', () => {
+  it('oversized en balance keeps the full label and tail-truncates (EN_BALANCE still matches)', () => {
+    const bal = enc().poleBalance(10000005, 'en'); // `$100000.05` = 10 > field width 9
+    expect(bal).toBe('Balance Due$100000.0'); // loses the last cents digit, framing holds
+    expect(bal.length).toBe(20);
+    expect(/Balance Due([\x20-\x7E]{9})/.test(bal)).toBe(true);
+  });
+
+  it('non-ASCII pole item text is replaced with U+FFFD (player maps it to a space, framing holds)', () => {
+    const item = enc().poleItem(1, 'Café crème', 199, 'en');
+    expect(item.length).toBe(20);
+    expect(item).not.toContain('é');
+    expect(item).not.toContain('è');
+    expect(item).toContain('Caf� cr�me');
+    // After the player's `chunk.replace(/�/g, ' ')`, the 20-char run matches.
+    expect(/^[\x20-\x7E]{20}$/.test(item.replace(/�/g, ' '))).toBe(true);
+  });
+
+  it('fractional quantity renders as its plain decimal string (dropped by PRODUCT_LINE, like real hardware)', () => {
+    const item = enc().poleItem(0.5, 'Coke', 194, 'en');
+    expect(item.startsWith('0.5 Coke')).toBe(true);
+    expect(item.length).toBe(20);
+    expect(/^(\d+)\s+([\x20-\x7E]+?)\s+\$(\d+\.\d\d)$/.test(item)).toBe(false);
+  });
+
+  it('negative pole change uses a leading minus (the only sign the player pole path parses)', () => {
     const chg = enc().poleChange(-300, 'fr');
-    expect(chg).toBe('Monnaie due: (3,00$)');
+    expect(chg).toBe('Monnaie due:  -3,00$');
     expect(chg.length).toBe(20);
   });
 });

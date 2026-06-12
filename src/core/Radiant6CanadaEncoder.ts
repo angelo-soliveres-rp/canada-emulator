@@ -17,7 +17,7 @@
  *     the player receives as U+FFFD and replaces with a space.
  */
 
-import { decomposeCents, formatPoleAmount, type PosLocale } from './currency';
+import { formatPoleAmount, formatVjAmount, type PosLocale } from './currency';
 
 const REPLACEMENT_CHAR = '�'; // � — legacy substitute for fr `û` in pole output
 
@@ -36,28 +36,44 @@ function formatEventTime(d: Date): string {
   );
 }
 
+// VJ amounts come from formatVjAmount with a PER-FIELD negative style — the
+// player only un-parenthesizes ExtendedPrice (1011/1014/1021) and NewUnitPrice
+// (1013); see the formatVjAmount doc comment in currency.ts for the parser
+// line numbers. Each call site below states which style its field needs.
+
 /**
- * Plain numeric wire amount (no currency symbol, no thousands separator).
- * Negatives are parenthesized like the real register: `Amount=(0,02)`, which
- * eventLine's comma-escaping turns into the legacy fixture form `(0,,02)`.
+ * Replace every char outside printable ASCII with U+FFFD. The real wire is a
+ * single-byte charset, so the player decodes unknown bytes as U+FFFD and maps
+ * them to a space before draining (PoleDisplayParser.ts:140
+ * `chunk.replace(/�/g, ' ')`) — its 20-char run regex (TWENTY_CHARS,
+ * PoleDisplayParser.ts:47 `[\x20-\x7E]{20}`) then keeps framing. A raw
+ * non-ASCII char here would never match that run and would misframe the
+ * stream permanently.
  */
-function wireAmount(cents: number, locale: PosLocale): string {
-  const { negative, dollars, frac } = decomposeCents(cents);
-  const decimal = locale === 'fr' ? ',' : '.';
-  const bare = `${dollars}${decimal}${frac}`;
-  return negative ? `(${bare})` : bare;
+function sanitizePoleText(text: string): string {
+  return text.replace(/[^\x20-\x7E]/g, REPLACEMENT_CHAR);
+}
+
+/** Single choke point for every pole window: sanitize, then exactly 20 chars. */
+function clampPoleWindow(window: string): string {
+  return sanitizePoleText(window).padEnd(20, ' ').slice(0, 20);
 }
 
 /**
  * Build a fixed-width pole window: label left-justified, amount right-justified.
- * Always at most 20 chars — the player drains the stream in strict 20-char
- * runs, so one oversized window would misframe every window after it. An
- * amount wider than its field trims the label, never the amount.
+ * Always exactly 20 chars — the player drains the stream in strict 20-char
+ * runs, so one oversized window would misframe every window after it.
  */
 function poleWindow(label: string, fieldWidth: number, amount: string): string {
   const window = label + amount.padStart(fieldWidth, ' ');
-  if (window.length <= 20) return window;
-  return (label.slice(0, Math.max(0, 20 - amount.length)) + amount).slice(0, 20);
+  if (window.length <= 20) return clampPoleWindow(window);
+  // Overflow: the player's window regexes anchor on the FULL literal label
+  // (FR_CHANGE PoleDisplayParser.ts:69, EN_BALANCE :50), so trimming the
+  // label silently drops the window. Keep the label and tail-truncate to 20:
+  // fr loses only the trailing `$` (the capture still reads the value); en
+  // can lose the last cents digit — degraded but still parseable, and
+  // realistic amounts never overflow.
+  return clampPoleWindow(label + amount);
 }
 
 type Field = [key: string, value: string | number];
@@ -83,8 +99,13 @@ export class Radiant6CanadaEncoder {
     ];
     // The register escapes commas embedded in values as `,,` (fr decimals,
     // names, descriptions); the player's parseKeyValues masks `,,` before
-    // splitting on `,` and restores it after.
-    return parts.map(([k, v]) => `${k}=${String(v).replace(/,/g, ',,')}`).join(',') + '\r\n';
+    // splitting on `,` and restores it after. Line framing is the wire
+    // contract: CR/LF cannot appear inside a record, so collapse to a space.
+    return (
+      parts
+        .map(([k, v]) => `${k}=${String(v).replace(/[\r\n]+/g, ' ').replace(/,/g, ',,')}`)
+        .join(',') + '\r\n'
+    );
   }
 
   registerOpen(args: { tx: number; operatorId: string; operatorName: string }): string {
@@ -124,15 +145,22 @@ export class Radiant6CanadaEncoder {
     locale?: PosLocale;
   }): string {
     const locale = args.locale ?? 'en';
-    const extended = wireAmount(Math.round(args.priceCents * args.quantity), locale);
+    // ExtendedPrice is un-parenthesized by the player (parser:384) → paren.
+    // UnitPrice is never read by the player's 1011 handler; minus keeps it on
+    // the convertLocaleCurrencyToBigDecimal-parseable path if that changes.
+    const extended = formatVjAmount(Math.round(args.priceCents * args.quantity), locale, 'paren');
     return this.eventLine(1011, [
       ['TransactionNumber', args.tx],
       ['ItemNumber', args.lineNumber],
       ['Barcode', args.barcode],
       ['ItemType', 'Regular Sales Item'],
       ['Description', args.description],
-      ['UnitPrice', wireAmount(args.priceCents, locale)],
+      ['UnitPrice', formatVjAmount(args.priceCents, locale, 'minus')],
       ['ExtendedPrice', extended],
+      // Period-decimal Quantity on a comma-decimal fr line is an
+      // uncorroborated assumption pending a real fr register capture; the
+      // only legacy evidence is the en-only legacy emulator's BigDecimal
+      // toString (Radiant6RegisterEmulator.java).
       ['Quantity', args.quantity.toFixed(3)],
       ['AgeMinimum', 0],
     ]);
@@ -149,7 +177,8 @@ export class Radiant6CanadaEncoder {
     return this.eventLine(1013, [
       ['TransactionNumber', args.tx],
       ['ItemNumber', args.lineNumber],
-      ['NewUnitPrice', wireAmount(args.newUnitPriceCents, args.locale ?? 'en')],
+      // Un-parenthesized by the player (parser:463) → paren.
+      ['NewUnitPrice', formatVjAmount(args.newUnitPriceCents, args.locale ?? 'en', 'paren')],
     ]);
   }
 
@@ -166,7 +195,8 @@ export class Radiant6CanadaEncoder {
       ['ItemNumber', args.lineNumber],
       ['OldQuantity', args.oldQuantity.toFixed(3)],
       ['NewQuantity', args.newQuantity.toFixed(3)],
-      ['ExtendedPrice', wireAmount(args.extendedPriceCents, args.locale ?? 'en')],
+      // Un-parenthesized by the player (parser:478) → paren.
+      ['ExtendedPrice', formatVjAmount(args.extendedPriceCents, args.locale ?? 'en', 'paren')],
     ]);
   }
 
@@ -175,7 +205,9 @@ export class Radiant6CanadaEncoder {
       ['TransactionNumber', args.tx],
       ['MOPId', args.mopId ?? 5],
       ['MOPDescription', args.mopDescription],
-      ['Amount', wireAmount(args.amountCents, args.locale ?? 'en')],
+      // Parsed directly by convertLocaleCurrencyToBigDecimal (parser:275,289),
+      // which never sees convertParenthesizedToSigned → minus.
+      ['Amount', formatVjAmount(args.amountCents, args.locale ?? 'en', 'minus')],
     ]);
   }
 
@@ -184,7 +216,8 @@ export class Radiant6CanadaEncoder {
       ['TransactionNumber', args.tx],
       ['MOPId', 5],
       ['MOPDescription', args.mopDescription ?? 'Cash'],
-      ['Amount', wireAmount(args.amountCents, args.locale ?? 'en')],
+      // Parsed directly by convertLocaleCurrencyToBigDecimal (parser:309) → minus.
+      ['Amount', formatVjAmount(args.amountCents, args.locale ?? 'en', 'minus')],
     ]);
   }
 
@@ -193,7 +226,10 @@ export class Radiant6CanadaEncoder {
     return this.eventLine(1022, [
       ['TransactionNumber', args.tx],
       ['Description', args.description ?? 'Arrondir'],
-      ['Amount', wireAmount(args.amountCents, args.locale ?? 'en')],
+      // The player never reads this Amount (Arrondir/Rounding early-return,
+      // parser:546); paren is what the real register emits per the legacy
+      // fixture `Amount=(0,,02)` (Radiant6CanadaVirtualJournalTest.java:32).
+      ['Amount', formatVjAmount(args.amountCents, args.locale ?? 'en', 'paren')],
     ]);
   }
 
@@ -230,17 +266,24 @@ export class Radiant6CanadaEncoder {
    * (documented limitation) — balance/change still carry fr amounts.
    */
   poleItem(quantity: number, description: string, priceCents: number, locale: PosLocale): string {
-    const qty = String(Math.trunc(quantity));
+    // Plain decimal string matches the legacy register's BigDecimal
+    // toPlainString() (Radiant6RegisterEmulator.java:99). Fractional-qty
+    // windows fail the player's PRODUCT_LINE `^(\d+)` anchor and are
+    // dropped — same as real hardware, which is the point.
+    const qty = String(quantity);
     const price = formatPoleAmount(priceCents, locale);
     const prefix = `${qty} ${description}`;
     const gap = Math.max(1, 20 - prefix.length - price.length);
-    let window = prefix + ' '.repeat(gap) + price;
-    if (window.length > 20) {
-      // Trim the description so the whole window fits 20 chars.
-      const overflow = window.length - 20;
-      const trimmedDesc = description.slice(0, Math.max(0, description.length - overflow));
-      window = `${qty} ${trimmedDesc} ${price}`;
-    }
-    return window.padEnd(20, ' ').slice(0, 20);
+    const raw = prefix + ' '.repeat(gap) + price;
+    const overflow = raw.length - 20;
+    // Trim the description first so the whole window fits 20 chars.
+    const window =
+      overflow <= 0
+        ? raw
+        : `${qty} ${description.slice(0, Math.max(0, description.length - overflow))} ${price}`;
+    // Last resort: with the description fully trimmed and qty+price still
+    // ≥ 19 chars, the clamp cuts the price tail — that window is unparseable,
+    // but the 20-char stream framing survives.
+    return clampPoleWindow(window);
   }
 }
