@@ -35,12 +35,12 @@
 
 .modal { position: fixed; inset: 0; z-index: 55; background: rgba(6, 8, 12, .6); display: flex; align-items: center; justify-content: center; padding: var(--s4); animation: ce-fadein var(--dur) var(--ease); }
 /* Fixed-height flex column: header + hint stay pinned, only .items scrolls. */
-.box { width: 480px; max-width: 92vw; height: min(74vh, 640px); background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--r-lg); box-shadow: var(--sh-2); display: flex; flex-direction: column; gap: var(--s2); padding: var(--s4); overflow: hidden; animation: ce-pop var(--dur) var(--ease); }
+.box { width: min(92vw, 1060px); max-height: min(64vh, 520px); background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--r-lg); box-shadow: var(--sh-2); display: flex; flex-direction: column; gap: var(--s2); padding: var(--s4); overflow: hidden; animation: ce-pop var(--dur) var(--ease); }
 .boxhead { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s2); flex: 0 0 auto; }
 .boxhead b { font-size: var(--t-base); font-weight: 600; line-height: 1.3; }
 .boxhead button { background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text-muted); border-radius: var(--r-sm); width: 28px; height: 28px; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 .boxhead button:hover { color: var(--text); border-color: var(--red); }
-.items { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: min-content; gap: var(--s2); align-content: start; }
+.items { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); grid-auto-rows: min-content; gap: var(--s2); align-content: start; }
 .item { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 9px 10px; color: var(--text); cursor: pointer; text-align: left; }
 .item:hover { border-color: var(--accent); background: var(--surface-3); }
 .item span { font-size: var(--t-sm); line-height: 1.25; }
