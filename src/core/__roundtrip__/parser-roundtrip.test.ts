@@ -11,10 +11,13 @@
 import { describe, it, expect } from 'vitest';
 import { Radiant6CanadaEncoder } from '../Radiant6CanadaEncoder';
 
-// CK Player 2.0 sibling repo — real parsers, not copies.
-import { Radiant6CanadaMessageParser } from '../../../../CKPlayer2.0/electron/plugins/radiant6-canada/Radiant6CanadaMessageParser';
-import { Radiant6CanadaPoleDisplayParser } from '../../../../CKPlayer2.0/electron/plugins/radiant6-canada/Radiant6CanadaPoleDisplayParser';
-import type { ParserContext, PoleDisplayContext } from '../../../../CKPlayer2.0/electron/plugins/radiant6-canada/types';
+// CK Player 2.0 sibling repo — real parsers, not copies. `@ckp2` is resolved
+// by vitest.config.ts (CKP2_DIR env var, or an upward search for a sibling
+// checkout named omni/ or CKPlayer2.0/); when the repo is absent the whole
+// __roundtrip__ dir is excluded with a loud warning instead of failing.
+import { Radiant6CanadaMessageParser } from '@ckp2/electron/plugins/radiant6-canada/Radiant6CanadaMessageParser';
+import { Radiant6CanadaPoleDisplayParser } from '@ckp2/electron/plugins/radiant6-canada/Radiant6CanadaPoleDisplayParser';
+import type { ParserContext, PoleDisplayContext } from '@ckp2/electron/plugins/radiant6-canada/types';
 
 const SOURCE = { name: 'emulator' };
 
@@ -60,7 +63,9 @@ describe('round-trip: VJ encoder → CKPlayer2.0 Radiant6CanadaMessageParser', (
     const actions = events.map((e) => e.action);
     expect(actions).toEqual(expect.arrayContaining(['SCAN_RECEIVED', 'ITEM_ADDED', 'POLEDISP_UPDATED']));
     const itemAdded = events.find((e) => e.action === 'ITEM_ADDED')!;
-    expect(itemAdded.data.code).toBe('049000000443');
+    // Parser ≥ LIFT-2358 carries the barcode as `upc` on ITEM_ADDED
+    // (SCAN_RECEIVED still uses `code`).
+    expect(itemAdded.data.upc).toBe('049000000443');
     expect(itemAdded.data.description).toBe('Coke');
     expect(itemAdded.data.price).toBeCloseTo(1.69, 5);
   });
