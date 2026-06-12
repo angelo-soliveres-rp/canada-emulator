@@ -36,7 +36,10 @@ with legacy avoids guessing.
   Phase B: `ads:triggerCodes` fetches the ads manifest → `adCodes: string[]`.
 - Renderer: replace the `PRICEBOOK` grid with tabs (one per `.qk`, `usualsuspects`
   first) → 3×3 paginated grid; green if `adCodes.has(upc)`, grey if not in
-  `pricebookIndex`. Tap fires the existing add path, honoring `sendScan`.
+  `pricebookIndex`. Tap fires the existing add path. (`sendScan` is parsed for
+  format parity but is intentionally a no-op: legacy forces `sendScan=false`
+  on Canadian registers — `Radiant6RegisterEmulator.java:82`, "no scanner" —
+  and the flag never gated whether the item is added.)
 
 ## Sequencing
 
