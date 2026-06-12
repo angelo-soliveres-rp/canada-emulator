@@ -17,7 +17,7 @@
  *     the player receives as U+FFFD and replaces with a space.
  */
 
-import { formatCurrency, type PosLocale } from './currency';
+import { decomposeCents, formatPoleAmount, type PosLocale } from './currency';
 
 const REPLACEMENT_CHAR = '�'; // � — legacy substitute for fr `û` in pole output
 
@@ -36,19 +36,28 @@ function formatEventTime(d: Date): string {
   );
 }
 
-/** Plain numeric wire amount (no currency symbol, no thousands separator). */
+/**
+ * Plain numeric wire amount (no currency symbol, no thousands separator).
+ * Negatives are parenthesized like the real register: `Amount=(0,02)`, which
+ * eventLine's comma-escaping turns into the legacy fixture form `(0,,02)`.
+ */
 function wireAmount(cents: number, locale: PosLocale): string {
-  const negative = cents < 0;
-  const abs = Math.abs(Math.trunc(cents));
-  const dollars = Math.floor(abs / 100);
-  const frac = (abs % 100).toString().padStart(2, '0');
+  const { negative, dollars, frac } = decomposeCents(cents);
   const decimal = locale === 'fr' ? ',' : '.';
-  return `${negative ? '-' : ''}${dollars}${decimal}${frac}`;
+  const bare = `${dollars}${decimal}${frac}`;
+  return negative ? `(${bare})` : bare;
 }
 
-/** Build a fixed-width pole window: label left-justified, amount right-justified. */
+/**
+ * Build a fixed-width pole window: label left-justified, amount right-justified.
+ * Always at most 20 chars — the player drains the stream in strict 20-char
+ * runs, so one oversized window would misframe every window after it. An
+ * amount wider than its field trims the label, never the amount.
+ */
 function poleWindow(label: string, fieldWidth: number, amount: string): string {
-  return label + amount.padStart(fieldWidth, ' ');
+  const window = label + amount.padStart(fieldWidth, ' ');
+  if (window.length <= 20) return window;
+  return (label.slice(0, Math.max(0, 20 - amount.length)) + amount).slice(0, 20);
 }
 
 type Field = [key: string, value: string | number];
@@ -72,7 +81,10 @@ export class Radiant6CanadaEncoder {
       ['EventTime', formatEventTime(this.clock())],
       ...fields,
     ];
-    return parts.map(([k, v]) => `${k}=${v}`).join(',') + '\r\n';
+    // The register escapes commas embedded in values as `,,` (fr decimals,
+    // names, descriptions); the player's parseKeyValues masks `,,` before
+    // splitting on `,` and restores it after.
+    return parts.map(([k, v]) => `${k}=${String(v).replace(/,/g, ',,')}`).join(',') + '\r\n';
   }
 
   registerOpen(args: { tx: number; operatorId: string; operatorName: string }): string {
@@ -199,17 +211,17 @@ export class Radiant6CanadaEncoder {
   /** Running balance (incl. tax). en: `Balance Due` + 9; fr: `Solde d�:` + 11. */
   poleBalance(cents: number, locale: PosLocale): string {
     if (locale === 'fr') {
-      return poleWindow(`Solde d${REPLACEMENT_CHAR}:`, 11, formatCurrency(cents, 'fr'));
+      return poleWindow(`Solde d${REPLACEMENT_CHAR}:`, 11, formatPoleAmount(cents, 'fr'));
     }
-    return poleWindow('Balance Due', 9, formatCurrency(cents, 'en'));
+    return poleWindow('Balance Due', 9, formatPoleAmount(cents, 'en'));
   }
 
   /** Change due. en: `Change Due` + 10; fr: `Monnaie due:` + 8. */
   poleChange(cents: number, locale: PosLocale): string {
     if (locale === 'fr') {
-      return poleWindow('Monnaie due:', 8, formatCurrency(cents, 'fr'));
+      return poleWindow('Monnaie due:', 8, formatPoleAmount(cents, 'fr'));
     }
-    return poleWindow('Change Due', 10, formatCurrency(cents, 'en'));
+    return poleWindow('Change Due', 10, formatPoleAmount(cents, 'en'));
   }
 
   /**
@@ -219,7 +231,7 @@ export class Radiant6CanadaEncoder {
    */
   poleItem(quantity: number, description: string, priceCents: number, locale: PosLocale): string {
     const qty = String(Math.trunc(quantity));
-    const price = locale === 'fr' ? formatCurrency(priceCents, 'fr') : formatCurrency(priceCents, 'en');
+    const price = formatPoleAmount(priceCents, locale);
     const prefix = `${qty} ${description}`;
     const gap = Math.max(1, 20 - prefix.length - price.length);
     let window = prefix + ' '.repeat(gap) + price;

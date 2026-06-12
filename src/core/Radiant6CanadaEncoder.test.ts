@@ -86,6 +86,65 @@ describe('Radiant6CanadaEncoder — tender / change / Arrondir / loyalty', () =>
   });
 });
 
+describe('Radiant6CanadaEncoder — VJ value escaping (legacy `,,` contract)', () => {
+  it('escapes the fr decimal comma as `,,` in amount values', () => {
+    const line = enc().itemAdd({
+      tx: 1,
+      lineNumber: 1,
+      barcode: '049000000443',
+      description: 'Eau',
+      priceCents: 194,
+      quantity: 1,
+      locale: 'fr',
+    });
+    expect(line).toContain('UnitPrice=1,,94');
+    expect(line).toContain('ExtendedPrice=1,,94');
+  });
+
+  it('escapes commas embedded in text values (legacy fixture `OperatorName=Young,, Brianna`)', () => {
+    const line = enc().itemAdd({
+      tx: 1,
+      lineNumber: 1,
+      barcode: 'x',
+      description: 'CHIPS, BBQ 200G',
+      priceCents: 100,
+      quantity: 1,
+    });
+    expect(line).toContain('Description=CHIPS,, BBQ 200G');
+    const op = enc().registerOpen({ tx: 1, operatorId: '42', operatorName: 'Young, Brianna' });
+    expect(op).toContain('OperatorName=Young,, Brianna');
+  });
+
+  it('emits negative amounts parenthesized (legacy fixture `Amount=(0,,02)`)', () => {
+    expect(enc().rounding({ tx: 9, amountCents: -2, locale: 'fr' })).toContain('Amount=(0,,02)');
+    expect(enc().rounding({ tx: 9, amountCents: -2 })).toContain('Amount=(0.02)');
+  });
+
+  it('survives the player parseKeyValues algorithm (mask `,,` → split `,` → restore)', () => {
+    const line = enc().itemAdd({
+      tx: 1,
+      lineNumber: 1,
+      barcode: 'x',
+      description: 'CHIPS, BBQ 200G',
+      priceCents: 194,
+      quantity: 1,
+      locale: 'fr',
+    });
+    const SENTINEL = '\u0001';
+    const masked = line.trim().replace(/,,/g, SENTINEL);
+    const parsed = new Map<string, string>();
+    for (const piece of masked.split(',')) {
+      const restored = piece.split(SENTINEL).join(',');
+      const eq = restored.indexOf('=');
+      if (eq <= 0) continue;
+      parsed.set(restored.slice(0, eq), restored.slice(eq + 1));
+    }
+    expect(parsed.get('Description')).toBe('CHIPS, BBQ 200G');
+    expect(parsed.get('UnitPrice')).toBe('1,94');
+    expect(parsed.get('ExtendedPrice')).toBe('1,94');
+  });
+});
+
 describe('Radiant6CanadaEncoder — pole display windows (20-char)', () => {
   it('en balance / change are exactly 20 chars and match the parser regexes', () => {
     const bal = enc().poleBalance(194, 'en');
@@ -110,5 +169,34 @@ describe('Radiant6CanadaEncoder — pole display windows (20-char)', () => {
     const item = enc().poleItem(1, 'Coke', 194, 'en');
     expect(item.length).toBe(20);
     expect(/^(\d+)\s+([\x20-\x7E]+?)\s+\$(\d+\.\d\d)$/.test(item)).toBe(true);
+  });
+
+  it('pole amounts ≥ $1,000 carry no thousands separator (none exists on the real wire)', () => {
+    const fr = enc().poleBalance(123456, 'fr');
+    expect(fr).not.toContain('\u00A0');
+    expect(fr.length).toBe(20);
+    expect(fr.endsWith('1234,56$')).toBe(true);
+    const en = enc().poleBalance(123456, 'en');
+    expect(en).toBe('Balance Due $1234.56');
+    const item = enc().poleItem(1, 'TV', 123456, 'en');
+    expect(/^(\d+)\s+([\x20-\x7E]+?)\s+\$(\d+\.\d\d)$/.test(item)).toBe(true);
+  });
+
+  it('en balance at $10,000.05 is exactly 20 chars and keeps the full amount', () => {
+    const bal = enc().poleBalance(1000005, 'en');
+    expect(bal).toBe('Balance Due$10000.05');
+    expect(bal.length).toBe(20);
+  });
+
+  it('oversized amounts trim the label, never the amount, and never exceed 20 chars', () => {
+    const chg = enc().poleChange(1000000, 'fr'); // `10000,00$` = 9 > field width 8
+    expect(chg.length).toBe(20);
+    expect(chg.endsWith('10000,00$')).toBe(true);
+  });
+
+  it('negative pole change is parenthesized (legacy fixture `Monnaie due: (3,00$)`)', () => {
+    const chg = enc().poleChange(-300, 'fr');
+    expect(chg).toBe('Monnaie due: (3,00$)');
+    expect(chg.length).toBe(20);
   });
 });
