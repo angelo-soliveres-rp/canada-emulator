@@ -1,0 +1,67 @@
+.app {
+  height: 100vh; width: 100vw; overflow: hidden;
+  display: grid; grid-template-rows: auto minmax(0, 1fr);
+  background:
+    radial-gradient(1100px 560px at 100% -12%, rgba(79, 147, 245, .06), transparent 60%),
+    radial-gradient(820px 520px at -8% 112%, rgba(223, 74, 82, .05), transparent 56%),
+    var(--bg);
+  color: var(--text);
+}
+.body { display: grid; min-height: 0; gap: 1px; background: var(--border); }
+.panel { background: var(--bg); min-width: 0; min-height: 0; container-type: inline-size; display: flex; flex-direction: column; overflow: hidden; }
+.keys { grid-area: keys; }
+.trig { grid-area: trig; }
+.txn { grid-area: txn; }
+.log { grid-area: log; }
+
+/* Control — buttons are the hero; the log collapses to a peek strip. */
+.app[data-mode='control'] .body {
+  grid-template-columns: minmax(320px, 1.55fr) minmax(300px, 1fr);
+  grid-template-rows: minmax(0, 1.3fr) minmax(0, 1fr) auto;
+  grid-template-areas: "keys txn" "trig txn" "log log";
+}
+.app[data-mode='control'] .log { overflow: visible; }
+
+/* Split — balanced operate / log. */
+.app[data-mode='split'] .body {
+  grid-template-columns: minmax(250px, 1fr) minmax(300px, 1.1fr) minmax(320px, 1.3fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas: "keys txn log" "trig txn log";
+}
+
+/* Logs — the log is the hero; operate shrinks to a usable rail. */
+.app[data-mode='logs'] .body {
+  grid-template-columns: minmax(208px, 290px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1.15fr) auto;
+  grid-template-areas: "keys log" "trig log" "txn log";
+}
+
+/* Compact window (about a quarter screen and below): each mode shows one region. */
+@media (max-width: 720px), (max-height: 560px) {
+  .app[data-mode='control'] .body {
+    grid-template-columns: 1fr; grid-template-rows: none;
+    grid-auto-rows: auto; grid-template-areas: "keys" "trig" "txn"; overflow: auto;
+  }
+  .app[data-mode='control'] .log { display: none; }
+  /* Definite min-heights so the stacked panels' height:100% chains resolve
+     (without these, the quick-key grid + ad list collapse in a scroll column). */
+  .app[data-mode='control'] .keys { min-height: 264px; }
+  .app[data-mode='control'] .trig { min-height: 212px; }
+  .app[data-mode='control'] .txn { min-height: 340px; }
+
+  .app[data-mode='logs'] .body {
+    grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); grid-template-areas: "log";
+  }
+  .app[data-mode='logs'] .keys,
+  .app[data-mode='logs'] .trig,
+  .app[data-mode='logs'] .txn { display: none; }
+
+  .app[data-mode='split'] .body {
+    grid-template-columns: 1fr; grid-template-rows: none;
+    grid-auto-rows: auto; grid-template-areas: "keys" "trig" "txn" "log"; overflow: auto;
+  }
+  .app[data-mode='split'] .keys { min-height: 264px; }
+  .app[data-mode='split'] .trig { min-height: 212px; }
+  .app[data-mode='split'] .txn { min-height: 340px; }
+  .app[data-mode='split'] .log { min-height: 260px; }
+}

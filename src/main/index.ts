@@ -340,8 +340,10 @@ function createWindow(): void {
   const win = new BrowserWindow({
     width: 1320,
     height: 1000,
-    minWidth: 1100,
-    minHeight: 820,
+    // Low minimums so the window can be parked at a quarter of a laptop screen;
+    // the renderer's compact layout (mode = one region) takes over below ~720px.
+    minWidth: 380,
+    minHeight: 320,
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
