@@ -14,6 +14,12 @@
 
 export interface QuickKeyEntry {
   upc: string;
+  /**
+   * Parsed for .qk format parity but intentionally unused: on Canadian
+   * registers legacy forces sendScan=false ("no scanner",
+   * Radiant6RegisterEmulator.java:82), and in the base legacy emulator the
+   * flag only adds scanner-byte output — the item is added either way.
+   */
   sendScan: boolean;
   description: string;
   /** Quantity to fire (defaults to 1 when the field is absent). */

@@ -11,10 +11,13 @@
 import { describe, it, expect } from 'vitest';
 import { Radiant6CanadaEncoder } from '../Radiant6CanadaEncoder';
 
-// CK Player 2.0 sibling repo — real parsers, not copies.
-import { Radiant6CanadaMessageParser } from '../../../../CKPlayer2.0/electron/plugins/radiant6-canada/Radiant6CanadaMessageParser';
-import { Radiant6CanadaPoleDisplayParser } from '../../../../CKPlayer2.0/electron/plugins/radiant6-canada/Radiant6CanadaPoleDisplayParser';
-import type { ParserContext, PoleDisplayContext } from '../../../../CKPlayer2.0/electron/plugins/radiant6-canada/types';
+// CK Player 2.0 sibling repo — real parsers, not copies. `@ckp2` is resolved
+// by vitest.config.ts (CKP2_DIR env var, or an upward search for a sibling
+// checkout named omni/ or CKPlayer2.0/); when the repo is absent the whole
+// __roundtrip__ dir is excluded with a loud warning instead of failing.
+import { Radiant6CanadaMessageParser } from '@ckp2/electron/plugins/radiant6-canada/Radiant6CanadaMessageParser';
+import { Radiant6CanadaPoleDisplayParser } from '@ckp2/electron/plugins/radiant6-canada/Radiant6CanadaPoleDisplayParser';
+import type { ParserContext, PoleDisplayContext } from '@ckp2/electron/plugins/radiant6-canada/types';
 
 const SOURCE = { name: 'emulator' };
 
@@ -60,9 +63,27 @@ describe('round-trip: VJ encoder → CKPlayer2.0 Radiant6CanadaMessageParser', (
     const actions = events.map((e) => e.action);
     expect(actions).toEqual(expect.arrayContaining(['SCAN_RECEIVED', 'ITEM_ADDED', 'POLEDISP_UPDATED']));
     const itemAdded = events.find((e) => e.action === 'ITEM_ADDED')!;
-    expect(itemAdded.data.code).toBe('049000000443');
+    // ITEM_ADDED carries the barcode as `upc` since omni commit db29599
+    // (2026-06-04, renamed from `code`); the fallback accepts pre-rename
+    // checkouts. SCAN_RECEIVED uses `code` in both generations.
+    expect(itemAdded.data.upc ?? itemAdded.data.code).toBe('049000000443');
     expect(itemAdded.data.description).toBe('Coke');
     expect(itemAdded.data.price).toBeCloseTo(1.69, 5);
+  });
+
+  it('itemAdd with embedded comma + fr decimal roundtrips the `,,` escaping through the real parser', () => {
+    const ctx = vjCtx('fr');
+    const events = Radiant6CanadaMessageParser.parseLine(
+      SOURCE,
+      enc.itemAdd({ tx: 24, lineNumber: 1, barcode: '060410012345', description: 'CHIPS, BBQ 200G', priceCents: 194, quantity: 1, locale: 'fr' }),
+      ctx,
+    )!;
+    const itemAdded = events.find((e) => e.action === 'ITEM_ADDED')!;
+    expect(itemAdded.data.upc ?? itemAdded.data.code).toBe('060410012345');
+    // The comma survives unescaped: the parser masks `,,`, splits on `,`, restores.
+    expect(itemAdded.data.description).toBe('CHIPS, BBQ 200G');
+    // And the fr decimal `UnitPrice=1,,94` decodes back to 1.94.
+    expect(itemAdded.data.price).toBeCloseTo(1.94, 5);
   });
 
   it('itemVoid / priceOverride / qtyChange decode to their actions', () => {

@@ -53,6 +53,23 @@ describe('RegisterSession', () => {
     expect(msgs.find((m) => m.data.includes('EventId=1024'))?.data).toContain('DiscountCardNumber=8018782603800034999992');
   });
 
+  it('loyalty as the first action opens the lane first (1001 + 1009 precede 1024)', () => {
+    const s = new RegisterSession();
+    const msgs = s.loyalty('8018782603800034999992');
+    const ids = msgs.filter((m) => m.channel === 'vj').map((m) => m.data.match(/EventId=(\d+)/)?.[1]);
+    expect(ids).toEqual(['1001', '1009', '1024']);
+    // The lane is now open: a following addItem must not re-emit registerOpen.
+    const next = s.addItem({ code: 'a', description: 'A', priceCents: 100 });
+    expect(next.some((m) => m.data.includes('EventId=1001'))).toBe(false);
+  });
+
+  it('setQuantity as the first action opens the lane first (1001 + 1009 precede 1014)', () => {
+    const s = new RegisterSession();
+    const msgs = s.setQuantity(1, 2);
+    const ids = msgs.filter((m) => m.channel === 'vj').map((m) => m.data.match(/EventId=(\d+)/)?.[1]);
+    expect(ids).toEqual(['1001', '1009', '1014']);
+  });
+
   it('cash-exact tender emits Arrondir rounding, tender, change, basketEnd and resets', () => {
     const s = new RegisterSession({ taxRateBps: 500 });
     s.addItem({ code: 'a', description: 'A', priceCents: 169 }); // total 177 → rounds to 175
