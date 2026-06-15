@@ -1,7 +1,9 @@
 node_modules
 out
 dist
+dist-web
 *.log
+*.tsbuildinfo
 .DS_Store
 
 # Quick keys are supplied locally per dev (paste a folder in the UI or drop a

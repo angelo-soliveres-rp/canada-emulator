@@ -9,23 +9,31 @@
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
+    "build:web": "vite build --config vite.web.config.ts",
+    "dev:web": "concurrently -n ui,server -c cyan,magenta \"vite --config vite.web.config.ts\" \"tsx watch src/server/index.ts\"",
+    "serve": "npm run build:web && tsx src/server/index.ts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
-    "@electron-toolkit/utils": "^3.0.0"
+    "@electron-toolkit/utils": "^3.0.0",
+    "sirv": "^2.0.4",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "@types/ws": "^8.5.12",
     "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^9.1.0",
     "electron": "^31.0.0",
     "electron-vite": "^2.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "tsx": "^4.19.2",
     "typescript": "^5.5.0",
     "vite": "^5.3.0",
     "vitest": "^2.0.0"

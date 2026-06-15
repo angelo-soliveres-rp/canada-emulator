@@ -47,6 +47,33 @@ npm run build    # typecheck + production build
 > (distinct from CK Player 2.0's `5173`), so starting it first no longer blanks
 > the player. See *Tips*.
 
+### Run as a web app (browser, LAN)
+
+The same emulator also runs as a plain web server — open it at a URL instead of
+the desktop window, with **identical functionality**. A small Node server holds
+the TCP / filesystem / fetch logic (the part a browser can't do); the React UI is
+unchanged and talks to it over one WebSocket.
+
+```bash
+npm run dev:web    # Vite UI on :5273 + API/WS server on :8788 (hot reload)
+npm run serve      # production: build the UI, then serve it + API on :8788
+```
+
+Then open `http://<this-machine>:8788` from any device on the LAN. The desktop
+Electron app (`npm run dev`) still works — both share one service implementation
+(`src/server/emulatorService.ts`).
+
+Server env knobs: `EMULATOR_PORT` (default `8788`), `EMULATOR_BIND` (default
+`0.0.0.0`), `EMULATOR_TOKEN` (if set, append `?token=…` to the URL — the page
+reuses it for the WebSocket), `EMULATOR_DATA_DIR` (where `player.key` is
+persisted).
+
+> The server binds `0.0.0.0` (LAN-reachable) by default and exposes register
+> control + the persisted `player.key`. On an untrusted network set
+> `EMULATOR_TOKEN`, or `EMULATOR_BIND=127.0.0.1` to keep it local. All connected
+> browsers share one register session (one TCP link to the player), matching the
+> single-window desktop behaviour.
+
 ## Bundled, self-contained fixtures
 
 No external `liftck_player` checkout is required — the emulator ships its own:
@@ -112,14 +139,21 @@ No external `liftck_player` checkout is required — the emulator ships its own:
 
 ## Architecture
 
-- `electron/` (main) — `PosTransport`: TCP client socket(s) + auto-reconnect;
-  pole-only for Bulloch. IPC for pricebook / quick-keys / ads-manifest fetch and
-  GlobalInit registration.
+- `src/server/` — Node backend shared by **both** entry points: `emulatorService`
+  (pricebook / quick-keys / ads-manifest fetch, GlobalInit registration, and
+  transport control) plus `PosTransport` (TCP client socket(s) + auto-reconnect;
+  pole-only for Bulloch). `index.ts` is the standalone web server — serves the
+  built UI and exposes the service over one WebSocket (RPC + pushed events).
+- `src/main/` (Electron) — thin: window creation + IPC handlers that delegate to
+  `emulatorService`.
 - `src/core/` — pure, browser-safe, unit-tested: `currency`, `Basket`,
   `Radiant6CanadaEncoder`, `BullochEncoder`, `RegisterSession` (routes by
   register type), `quickkeys`, `pricebook`, `adTriggers`, `globalInit`,
-  `posTypes`.
-- `src/renderer/` — React UI (`useEmulator` hook over `RegisterSession`).
-- `src/preload/` — typed `window.emulator` bridge.
+  `posTypes`, `webRpc` (shared client/server message protocol).
+- `src/renderer/` — React UI (`useEmulator` hook over `RegisterSession`). The
+  only platform seam is `window.emulator` (`EmulatorBridge`).
+- `src/preload/` — typed `window.emulator` bridge for Electron (IPC).
+- `src/renderer/src/bridge/webEmulator.ts` — the same bridge for the web build,
+  backed by a WebSocket.
 
 Plans and designs: `docs/plans/`.
