@@ -103,10 +103,17 @@ async function fetchJsonWithTimeout(url: string, timeoutMs = 10000): Promise<unk
   }
 }
 
+/** True for a plain object (the only JSON shape we drill into). */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+// The fields are typed optional because they arrive off the wire — the
+// null-return below is the validation, not defensive redundancy.
 function adsBackendContext(req: {
-  backendBaseUrl: string;
-  playerCode: string;
-  playerKey: string;
+  backendBaseUrl?: string;
+  playerCode?: string;
+  playerKey?: string;
 }): { origin: string; tenant: string; locationCode: string; playerCode: string; playerKey: string } | null {
   const playerCode = req.playerCode?.trim();
   const playerKey = req.playerKey?.trim();
@@ -157,7 +164,9 @@ export class EmulatorService {
     return transport.status();
   }
 
-  disconnect(): Status {
+  // Async for signature consistency with `EmulatorBridge.disconnect()` — the
+  // close itself is synchronous.
+  async disconnect(): Promise<Status> {
     this.transport?.close();
     this.transport = null;
     // Broadcast so every connected client (web) reflects the disconnect.
@@ -223,13 +232,14 @@ export class EmulatorService {
     console.log(`[QuickKeys] Loading *.qk from ${dir}`);
     try {
       const names = orderQuickKeyFiles((await readdir(dir)).filter((n) => n.toLowerCase().endsWith('.qk')));
-      const files: QuickKeyFile[] = [];
-      for (const name of names) {
-        const text = await readFile(join(dir, name), 'utf-8');
-        const entries = parseQuickKeys(text);
-        console.log(`[QuickKeys]   ${name}: ${entries.length} keys`);
-        files.push({ file: name, entries });
-      }
+      const files: QuickKeyFile[] = await Promise.all(
+        names.map(async (name) => {
+          const text = await readFile(join(dir, name), 'utf-8');
+          const entries = parseQuickKeys(text);
+          console.log(`[QuickKeys]   ${name}: ${entries.length} keys`);
+          return { file: name, entries };
+        }),
+      );
       return { ok: true, files, dir };
     } catch (err) {
       return { ok: false, files: [], dir, error: err instanceof Error ? err.message : String(err) };
@@ -261,10 +271,16 @@ export class EmulatorService {
       });
       const manifestUrl = `${ctx.origin}/api/lift/${ctx.tenant}/manifests?${mparams}`;
       console.log(`[Ads] Fetching ads manifest: ${manifestUrl}`);
-      const manifest = (await fetchJsonWithTimeout(manifestUrl)) as { data?: Array<{ id: string | number; name?: string }> };
-      const items = Array.isArray(manifest?.data) ? manifest.data : [];
+      const manifest = await fetchJsonWithTimeout(manifestUrl);
+      const data = isRecord(manifest) ? manifest.data : undefined;
+      const items = Array.isArray(data)
+        ? data.filter(isRecord).filter((it) => typeof it.id === 'string' || typeof it.id === 'number')
+        : [];
       console.log(`[Ads] Manifest returned ${items.length} ad(s)`);
-      return { ok: true, ads: items.map((it) => ({ id: String(it.id), name: it.name ?? String(it.id) })) };
+      return {
+        ok: true,
+        ads: items.map((it) => ({ id: String(it.id), name: typeof it.name === 'string' ? it.name : String(it.id) })),
+      };
     } catch (err) {
       console.error('[Ads] manifest load failed:', err);
       return { ok: false, ads: [], error: err instanceof Error ? err.message : String(err) };
@@ -286,10 +302,12 @@ export class EmulatorService {
         playerKey: ctx.playerKey,
         excludes: 'keywords',
       });
-      const doc = (await fetchJsonWithTimeout(`${ctx.origin}/api/lift/${ctx.tenant}/elastic/ads/_doc?${dparams}`)) as {
-        data?: Array<{ json?: RawAdConfig }>;
-      };
-      const json = Array.isArray(doc?.data) && doc.data[0]?.json ? doc.data[0].json : null;
+      const doc = await fetchJsonWithTimeout(`${ctx.origin}/api/lift/${ctx.tenant}/elastic/ads/_doc?${dparams}`);
+      const data = isRecord(doc) ? doc.data : undefined;
+      const first = Array.isArray(data) && isRecord(data[0]) ? data[0] : null;
+      // The ad doc's deep shape is the backend's contract; we verify it is an
+      // object before trusting it as RawAdConfig.
+      const json = first && isRecord(first.json) ? (first.json as RawAdConfig) : null;
       if (!json) return { ok: false, error: `No ad doc for id ${req.id}` };
       return { ok: true, ad: json };
     } catch (err) {

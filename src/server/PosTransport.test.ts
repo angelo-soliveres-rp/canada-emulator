@@ -39,6 +39,19 @@ function listen(port = 0): Promise<TestServer> {
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Poll until `cond` holds (every 5ms) instead of sleeping a fixed delay —
+ * deterministic under CI load. Fixed `wait` remains only for negative
+ * assertions ("nothing arrived"), which are inherently time-based.
+ */
+async function waitFor(cond: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!cond()) {
+    if (Date.now() > deadline) throw new Error('waitFor: condition not met in time');
+    await wait(5);
+  }
+}
+
 let transport: PosTransport | undefined;
 const servers: net.Server[] = [];
 
@@ -57,7 +70,7 @@ describe('PosTransport', () => {
 
     transport = new PosTransport({ host: '127.0.0.1', vjPort: vj.port, polePort: pole.port });
     await transport.connect();
-    await wait(50);
+    await waitFor(() => transport!.status().vj === 'connected' && transport!.status().pole === 'connected');
 
     expect(transport.status()).toEqual({ vj: 'connected', pole: 'connected', scanner: 'disconnected' });
   });
@@ -69,11 +82,11 @@ describe('PosTransport', () => {
 
     transport = new PosTransport({ host: '127.0.0.1', vjPort: vj.port, polePort: pole.port });
     await transport.connect();
-    await wait(50);
+    await waitFor(() => transport!.status().vj === 'connected' && transport!.status().pole === 'connected');
 
     transport.send('vj', 'EventId=1001,TerminalNumber=1\r\n');
     transport.send('pole', 'Balance Due    $1.94');
-    await wait(50);
+    await waitFor(() => vj.received() !== '' && pole.received() !== '');
 
     expect(vj.received()).toBe('EventId=1001,TerminalNumber=1\r\n');
     expect(pole.received()).toBe('Balance Due    $1.94');
@@ -88,11 +101,11 @@ describe('PosTransport', () => {
     const injects: Array<{ barcode: string; quantity: number }> = [];
     transport.onInject((cmd) => injects.push(cmd));
     await transport.connect();
-    await wait(50);
+    await waitFor(() => transport!.status().vj === 'connected');
 
     // Player writes a completer inject back down the VJ socket (may arrive split).
     vj.push('EventId=2001,Barcode=049000000443,Quantity=2\r\nEventId=2001,Barcode=123,Quantity=1\r\n');
-    await wait(50);
+    await waitFor(() => injects.length === 2);
 
     expect(injects).toEqual([
       { barcode: '049000000443', quantity: 2 },
@@ -112,7 +125,7 @@ describe('PosTransport', () => {
       registerType: 'bulloch',
     });
     await transport.connect();
-    await wait(50);
+    await waitFor(() => transport!.status().pole === 'connected');
 
     // Pole is up; VJ is intentionally skipped even though a server is listening.
     expect(transport.status()).toEqual({ vj: 'disconnected', pole: 'connected', scanner: 'disconnected' });
@@ -137,7 +150,7 @@ describe('PosTransport', () => {
     const injects: Array<{ barcode: string; quantity: number }> = [];
     transport.onInject((cmd) => injects.push(cmd));
     await transport.connect();
-    await wait(50);
+    await waitFor(() => transport!.status().vj === 'connected' && transport!.status().scanner === 'connected');
 
     expect(transport.status()).toEqual({ vj: 'connected', pole: 'disconnected', scanner: 'connected' });
     expect(transport.send('pole', 'anything')).toBe(false);
@@ -147,7 +160,7 @@ describe('PosTransport', () => {
     // Player injects a completer barcode on the scanner socket (default UPC-A
     // template output: A + 11 digits + literal check-digit placeholder).
     scanner.push('\r\nA04900000044c\r\n');
-    await wait(50);
+    await waitFor(() => injects.length === 1);
 
     expect(injects).toEqual([{ barcode: '049000000443', quantity: 1 }]);
   });
@@ -164,18 +177,15 @@ describe('PosTransport', () => {
       reconnectDelayMs: 30,
     });
     await transport.connect();
-    await wait(50);
-    expect(transport.status().vj).toBe('connected');
+    await waitFor(() => transport!.status().vj === 'connected');
 
     // Drop the VJ server (force-closing the live client socket), then bring a
     // new one up on the same port.
     await vj.drop();
-    await wait(60);
-    expect(transport.status().vj).not.toBe('connected');
+    await waitFor(() => transport!.status().vj !== 'connected');
 
     const vj2 = await listen(vj.port);
     servers.push(vj2.server);
-    await wait(150);
-    expect(transport.status().vj).toBe('connected');
+    await waitFor(() => transport!.status().vj === 'connected', 3000);
   });
 });

@@ -42,7 +42,9 @@ stubs in the legacy `liftck_player` emulator module.
 - **Virtual Journal** (TCP, default `127.0.0.1:5438`): 1001 register open,
   1009 basket start, 1011 item add (with `Barcode`), 1012 void (with
   `Barcode`), 1013 price override, 1014 qty change, **1005 subtotal**,
-  **1020 tax**, 1007 tender, 1008 change, 1024 EasyPay/loyalty, 1002 basket end
+  **1020 tax** (both re-emitted after *every* basket mutation — the
+  VJ-authoritative cadence that keeps the player's Balance Due live),
+  1007 tender, 1008 change, 1024 EasyPay/loyalty, 1002 basket end
   (with `SubtotalAmount/TaxAmount/TotalAmount`). Amounts are decimal **dollars**
   (`6.87`), negatives use a leading minus — never parentheses or locale formats.
 - **Scanner** (TCP, default `127.0.0.1:10000`): inbound-only — the player
@@ -105,15 +107,20 @@ Electron app (`npm run dev`) still works — both share one service implementati
 (`src/server/emulatorService.ts`).
 
 Server env knobs: `EMULATOR_PORT` (default `8788`), `EMULATOR_BIND` (default
-`0.0.0.0`), `EMULATOR_TOKEN` (if set, append `?token=…` to the URL — the page
-reuses it for the WebSocket), `EMULATOR_DATA_DIR` (where `player.key` is
-persisted).
+`0.0.0.0`), `EMULATOR_TOKEN` (required as `?token=…` on the URL — the page
+reuses it for the WebSocket), `EMULATOR_ALLOWED_DIRS` (path-delimiter-separated
+roots remote clients may load pricebooks/quick keys from; unset = bundled
+resources only), `EMULATOR_DATA_DIR` (where `player.key` is persisted).
 
-> The server binds `0.0.0.0` (LAN-reachable) by default and exposes register
-> control + the persisted `player.key`. On an untrusted network set
-> `EMULATOR_TOKEN`, or `EMULATOR_BIND=127.0.0.1` to keep it local. All connected
-> browsers share one register session (one TCP link to the player), matching the
-> single-window desktop behaviour.
+> The server never listens on the LAN unauthenticated: with a non-loopback bind
+> (the `0.0.0.0` default) and no `EMULATOR_TOKEN`, it generates a one-run token
+> and prints ready-to-open URLs (`?token=…`) in the startup banner. Set
+> `EMULATOR_TOKEN` to pin a stable token, or `EMULATOR_BIND=127.0.0.1` to skip
+> auth locally. Every WebSocket RPC argument is validated at the boundary
+> (`src/server/rpcGuards.ts`); custom pricebook/quick-key directories are
+> refused unless allow-listed via `EMULATOR_ALLOWED_DIRS`. All connected
+> browsers share one register session (one TCP link to the player), matching
+> the single-window desktop behaviour.
 
 ## Bundled, self-contained fixtures
 

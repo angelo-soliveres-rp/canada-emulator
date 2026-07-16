@@ -16,6 +16,10 @@ import type { QuickKeyLoadResult } from '../../../core/quickkeys';
 import type { AdsManifestResult, AdDetailResult } from '../../../core/adTriggers';
 
 const RECONNECT_DELAY_MS = 1500;
+/** Reject an RPC that got no response — keeps `pending` from growing forever. */
+const RPC_TIMEOUT_MS = 15000;
+/** Cap on requests queued while the server is unreachable. */
+const MAX_QUEUED_REQUESTS = 100;
 
 /** Base WS URL. Dev: UI is on Vite's port, the server runs on 8788. Prod: same-origin. */
 function wsBaseUrl(): string {
@@ -33,14 +37,29 @@ function wsUrl(): string {
   return pageToken ? `${base}?token=${encodeURIComponent(pageToken)}` : base;
 }
 
+interface PendingRpc {
+  resolve: (v: unknown) => void;
+  reject: (e: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 export function createWebEmulator(): EmulatorBridge {
   let ws: WebSocket | null = null;
   let nextId = 1;
-  const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+  const pending = new Map<number, PendingRpc>();
   const statusListeners = new Set<(s: Status) => void>();
   const injectListeners = new Set<(c: InjectCommand) => void>();
   let outbox: string[] = [];
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Complete a pending RPC exactly once, clearing its timeout. */
+  const settle = (id: number, complete: (p: PendingRpc) => void): void => {
+    const p = pending.get(id);
+    if (!p) return;
+    pending.delete(id);
+    clearTimeout(p.timer);
+    complete(p);
+  };
 
   const open = (): void => {
     const socket = new WebSocket(wsUrl());
@@ -59,11 +78,8 @@ export function createWebEmulator(): EmulatorBridge {
         return;
       }
       if (msg.t === 'res') {
-        const p = pending.get(msg.id);
-        if (!p) return;
-        pending.delete(msg.id);
-        if (msg.ok) p.resolve(msg.result);
-        else p.reject(new Error(msg.error ?? 'RPC error'));
+        const res = msg;
+        settle(res.id, (p) => (res.ok ? p.resolve(res.result) : p.reject(new Error(res.error ?? 'RPC error'))));
       } else if (msg.t === 'ev') {
         if (msg.event === 'status') for (const l of statusListeners) l(msg.payload);
         else if (msg.event === 'inject') for (const l of injectListeners) l(msg.payload);
@@ -73,8 +89,7 @@ export function createWebEmulator(): EmulatorBridge {
     socket.onclose = (): void => {
       ws = null;
       // Reject in-flight requests so awaiting callers fail fast instead of hanging.
-      for (const [, p] of pending) p.reject(new Error('WebSocket closed'));
-      pending.clear();
+      for (const id of [...pending.keys()]) settle(id, (p) => p.reject(new Error('WebSocket closed')));
       if (!reconnectTimer) {
         reconnectTimer = setTimeout(() => {
           reconnectTimer = null;
@@ -90,10 +105,19 @@ export function createWebEmulator(): EmulatorBridge {
     const id = nextId++;
     const payload = JSON.stringify({ t: 'rpc', id, method, args } satisfies RpcRequest);
     const promise = new Promise<T>((resolve, reject) => {
-      pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
+      const timer = setTimeout(
+        () => settle(id, (p) => p.reject(new Error(`RPC ${method} timed out after ${RPC_TIMEOUT_MS}ms`))),
+        RPC_TIMEOUT_MS,
+      );
+      pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
     });
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(payload);
-    else outbox.push(payload);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(payload);
+    } else if (outbox.length < MAX_QUEUED_REQUESTS) {
+      outbox.push(payload);
+    } else {
+      settle(id, (p) => p.reject(new Error('Emulator server unreachable (request queue full)')));
+    }
     return promise;
   };
 
