@@ -145,6 +145,20 @@ describe('round-trip: US VJ encoder → CKPlayer2.0 Radiant6MessageParser', () =
     }
   });
 
+  it('mid-basket mutations keep the running SUBTOTAL/TAX live (per-mutation 1005/1020)', () => {
+    const s = new RegisterSession({ registerType: 'radiant6-us' });
+    const ctx = usCtx();
+    const actions = s
+      .addItem({ code: '049000000443', description: 'Coke', priceCents: 229 })
+      .flatMap((m) => Radiant6MessageParser.parseLine(SOURCE, m.data, ctx)?.map((e) => e.action) ?? []);
+    expect(actions).toEqual(expect.arrayContaining(['ITEM_ADDED', 'SUBTOTAL', 'TAX']));
+    // The parser's running context reflects the fresh mid-basket subtotal…
+    expect(ctx.lastSubtotal).toBeCloseTo(2.29, 5);
+    // …and the Balance Due pole line carries subtotal + tax.
+    expect(ctx.lastLine2).toContain('Balance Due');
+    expect(ctx.lastLine2).toContain('2.40');
+  });
+
   it('a full RegisterSession US sale decodes 1005/1020 and never contains a 1022', () => {
     const s = new RegisterSession({ registerType: 'radiant6-us' });
     const wire = [

@@ -200,20 +200,36 @@ describe('RegisterSession — radiant6-us (VJ-only, cents-exact, VJ-authoritativ
     expect(msgs.every((m) => m.channel === 'vj')).toBe(true);
   });
 
-  it('addItem emits only the 1011 (no pole windows) with the Barcode field', () => {
+  it('addItem emits 1011 + running 1005/1020 (VJ-authoritative cadence), no pole windows', () => {
     const s = us();
     const msgs = s.addItem({ code: '049000000443', description: 'Coke', priceCents: 229 });
     expect(msgs.every((m) => m.channel === 'vj')).toBe(true);
-    expect(eventIds(msgs)).toEqual(['1001', '1009', '1011']);
-    expect(msgs.at(-1)!.data).toContain('Barcode=049000000443');
+    expect(eventIds(msgs)).toEqual(['1001', '1009', '1011', '1005', '1020']);
+    expect(msgs[2].data).toContain('Barcode=049000000443');
+    expect(msgs[3].data).toContain('Amount=2.29'); // running subtotal
+    expect(msgs[4].data).toContain('Amount=0.11'); // running tax (5%)
   });
 
-  it('voidLine emits 1012 carrying the voided line Barcode (US-only field)', () => {
+  it('voidLine emits 1012 (with the US-only Barcode) then the refreshed 1005/1020', () => {
     const s = us();
     s.addItem({ code: '049000000443', description: 'Coke', priceCents: 229 });
     const msgs = s.voidLine(1);
-    expect(eventIds(msgs)).toEqual(['1012']);
+    expect(eventIds(msgs)).toEqual(['1012', '1005', '1020']);
     expect(msgs[0].data).toContain('Barcode=049000000443');
+    expect(msgs[1].data).toContain('Amount=0.00'); // subtotal back to zero
+    expect(msgs[2].data).toContain('Amount=0.00');
+  });
+
+  it('qty and price changes also refresh the running 1005/1020', () => {
+    const s = us();
+    s.addItem({ code: 'a', description: 'Gum', priceCents: 99 });
+    const qty = s.setQuantity(1, 3); // subtotal 2.97, tax 0.15
+    expect(eventIds(qty)).toEqual(['1014', '1005', '1020']);
+    expect(qty[1].data).toContain('Amount=2.97');
+    expect(qty[2].data).toContain('Amount=0.15');
+    const price = s.setPrice(1, 100); // subtotal 3.00, tax 0.15
+    expect(eventIds(price)).toEqual(['1013', '1005', '1020']);
+    expect(price[1].data).toContain('Amount=3.00');
   });
 
   it('tender is cents-exact: 1005 subtotal → 1020 tax → 1007 → 1008 → 1002, never 1022 rounding', () => {
@@ -325,12 +341,13 @@ describe('RegisterSession — verifone (Topaz plaintext VJ + non-authoritative p
     expect(poleText).toContain('CHANGE          0.88');
   });
 
-  it('voidTicket emits VOID TICKET with the transaction number', () => {
+  it('voidTicket emits VOID TICKET then the ST#/TRAN# trailer (BASKET_VOIDED → BASKET_END)', () => {
     const s = topaz();
     s.addItem({ code: 'a', description: 'GUM PACK', priceCents: 99 });
     const msgs = s.voidTicket();
-    expect(msgs).toHaveLength(1);
+    expect(msgs).toHaveLength(2);
     expect(msgs[0].data).toContain('VOID TICKET 1');
+    expect(msgs[1].data).toMatch(/ST# \d+ DR# \d+ TRAN# 1/);
   });
 
   it('loyalty emits a plaintext LOYALTY line', () => {

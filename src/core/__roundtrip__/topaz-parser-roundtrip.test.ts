@@ -122,6 +122,18 @@ describe('round-trip: Topaz VJ encoder → CKPlayer2.0 TopazMessageParser', () =
     expect(mobile.data.mobileNumber).toBe('5551234567');
   });
 
+  it('a voided ticket decodes BASKET_VOIDED followed by BASKET_END (trailer closes the basket)', () => {
+    const s = new RegisterSession({ registerType: 'verifone' });
+    s.addItem({ code: 'a', description: 'GUM PACK', priceCents: 99 });
+    const parser = new TopazMessageParser({ ...DEFAULT_TOPAZ_CONTEXT });
+    const actions = s
+      .voidTicket()
+      .flatMap((m) => parser.append(m.data))
+      .map((e) => e.action);
+    expect(actions.indexOf('BASKET_VOIDED')).toBeGreaterThanOrEqual(0);
+    expect(actions.indexOf('BASKET_END')).toBeGreaterThan(actions.indexOf('BASKET_VOIDED'));
+  });
+
   it('frames split across chunks reassemble (buffered header find)', () => {
     const parser = new TopazMessageParser({ ...DEFAULT_TOPAZ_CONTEXT });
     const frame = enc.itemAdd({ description: 'COKE ZERO EACH', quantity: 1, extendedCents: 229 });
