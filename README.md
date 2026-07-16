@@ -19,8 +19,11 @@ Supports four register types:
   Serial on real hardware, TCP here (the player's `IODeviceFactory` accepts
   either). Same US rules: cents-exact, decimal dollars, en-US.
 
-It replaces the empty `Radiant6CanadaRegisterEmulator` / `BullochRegisterEmulator`
-stubs in the legacy `liftck_player` emulator module.
+It replaces the legacy `liftck_player` emulator module
+(`module-app-liftck-emulator`): `Radiant6CanadaRegisterEmulator` was an empty
+stub there, while `BullochRegisterEmulator`, `Radiant6RegisterEmulator` (US)
+and `TopazRegisterEmulator` were real Swing-era implementations this app
+re-covers.
 
 ## What it emits
 
@@ -51,6 +54,9 @@ stubs in the legacy `liftck_player` emulator module.
   writes completer barcode injects here (`BarcodeScanner.writeToHost`); the
   emulator rings the item and echoes the 1011 back on the VJ, which is also
   what releases the player's Zynstra age-verification scan queue.
+  Loyalty-prefixed codes (`D7826…`/`D8018…`/`8018…`) are routed to an EventId
+  1024 sign-in instead of an item ring (legacy `Radiant6RegisterEmulator`
+  parity).
 - **No pole display** — the pole socket is never opened in US mode.
 
 **Verifone Topaz** (`verifone` register type)

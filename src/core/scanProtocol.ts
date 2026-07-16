@@ -44,6 +44,22 @@ export function parseScanToken(token: string): string | null {
   return digits;
 }
 
+/**
+ * Circle K loyalty card from a scanned/injected code, or null when the code is
+ * an ordinary item barcode. Legacy Radiant6RegisterEmulator.java:39-50 routes
+ * scans prefixed `D7826` / `D8018` (magstripe reads — the leading format char
+ * is dropped) or `8018` (bare card barcode) to an EventId 1024 sign-in instead
+ * of an item ring. (The legacy code stripped the first digit of bare `8018…`
+ * scans too, which would mangle the card number — its own example card keeps
+ * the 8018 prefix, so the intent is preserved here rather than the bug.)
+ */
+export function loyaltyCardFromScan(code: string): string | null {
+  const token = code.trim();
+  if (token.startsWith('D7826') || token.startsWith('D8018')) return token.slice(1);
+  if (token.startsWith('8018')) return token;
+  return null;
+}
+
 export interface ScanDrainResult {
   /** Barcodes decoded from complete (separator-terminated) segments. */
   barcodes: string[];

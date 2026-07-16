@@ -156,6 +156,20 @@ export class RegisterSession {
     ];
   }
 
+  /**
+   * Topaz pole refresh after a basket mutation: the item window (ignored by
+   * the player — realism only) followed by the running TOTAL window, which is
+   * the player's only mid-basket Balance Due signal in Topaz mode (legacy
+   * TopazRegisterEmulator.updatePoleAndJournal emits both on every
+   * add/void/qty/price change).
+   */
+  private topazPoleRefresh(description: string, extendedCents: number): WireMessage[] {
+    return [
+      { channel: 'pole', data: this.topaz.poleItem(description, extendedCents) },
+      { channel: 'pole', data: this.topaz.poleTotal(this.basket.totalCents()) },
+    ];
+  }
+
   /** How much cash the customer hands over for a given tender kind. */
   private tenderedFor(kind: TenderKind, totalCents: number, amountCents?: number): number {
     if (kind === 'cash-exact') return totalCents;
@@ -237,7 +251,7 @@ export class RegisterSession {
         case 'verifone':
           return [
             { channel: 'vj', data: this.topaz.itemAdd({ description: li.description, quantity: li.quantity, extendedCents: li.extendedCents() }) },
-            { channel: 'pole', data: this.topaz.poleItem(li.description, li.extendedCents()) },
+            ...this.topazPoleRefresh(li.description, li.extendedCents()),
           ];
         case 'radiant6-canada':
           return [
@@ -285,6 +299,7 @@ export class RegisterSession {
                 extendedCents: li?.extendedCents() ?? 0,
               }),
             },
+            ...this.topazPoleRefresh(li?.description ?? '', li?.extendedCents() ?? 0),
           ];
         case 'radiant6-canada':
           return [
@@ -324,6 +339,7 @@ export class RegisterSession {
           return [
             { channel: 'vj', data: this.topaz.itemVoid({ description, quantity: oldQuantity, extendedCents: oldExtended }) },
             { channel: 'vj', data: this.topaz.itemAdd({ description, quantity: updated?.quantity ?? quantity, extendedCents: extended }) },
+            ...this.topazPoleRefresh(description, extended),
           ];
         case 'radiant6-canada':
           return [
@@ -361,6 +377,7 @@ export class RegisterSession {
           return [
             { channel: 'vj', data: this.topaz.itemVoid({ description, quantity: oldQuantity, extendedCents: oldExtended }) },
             { channel: 'vj', data: this.topaz.itemAdd({ description, quantity: updated?.quantity ?? 1, extendedCents: updated?.extendedCents() ?? 0 }) },
+            ...this.topazPoleRefresh(description, updated?.extendedCents() ?? 0),
           ];
         case 'radiant6-canada':
           return [

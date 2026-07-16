@@ -20,6 +20,7 @@ import {
   type PricebookLoadResult,
 } from '../../core/pricebook';
 import type { GlobalInitConfig } from '../../core/globalInit';
+import { loyaltyCardFromScan } from '../../core/scanProtocol';
 import { quickKeyColor, type QuickKeyColor, type QuickKeyEntry, type QuickKeyFile } from '../../core/quickkeys';
 import {
   extractTriggersCompleters,
@@ -318,7 +319,11 @@ export function useEmulator(): {
     (messages: WireMessage[]) => {
       const entries: LogEntry[] = [];
       for (const m of messages) {
-        void window.emulator.send(m.channel, m.data);
+        // send() rejects on RPC timeout / queue overflow / closed WebSocket —
+        // surface it instead of leaving an unhandled rejection.
+        window.emulator.send(m.channel, m.data).catch((err: unknown) => {
+          logSys(`Send failed on ${m.channel}: ${err instanceof Error ? err.message : String(err)}`);
+        });
         entries.push({
           id: logId.current++,
           channel: m.channel,
@@ -329,7 +334,7 @@ export function useEmulator(): {
       setLog((prev) => [...entries.reverse(), ...prev].slice(0, 300));
       setSnapshot(session.snapshot());
     },
-    [session],
+    [session, logSys],
   );
 
   // Ring up completer injects pushed by the player over the VJ reverse channel:
@@ -339,10 +344,6 @@ export function useEmulator(): {
   // signal to close the emulator's now-stale completer modal.
   useEffect(() => {
     return window.emulator.onInject((cmd) => {
-      const hit = pricebookIndex.get(cmd.barcode) ?? quickKeys.find((p) => p.code === cmd.barcode);
-      const item = hit
-        ? { code: hit.code, description: hit.description, priceCents: hit.priceCents, quantity: cmd.quantity }
-        : { code: cmd.barcode, description: `UPC ${cmd.barcode}`, priceCents: 100, quantity: cmd.quantity };
       // US-family injects arrive as raw scans on the scanner socket — surface
       // the inbound line under its own channel so the Scan filter reflects it.
       if (isUsRegisterType(config.registerType)) {
@@ -353,6 +354,18 @@ export function useEmulator(): {
           ].slice(0, 300),
         );
       }
+      // Legacy Radiant6RegisterEmulator parity: loyalty-prefixed scans
+      // (D7826/D8018/8018…) route to an EventId 1024 sign-in, not an item ring.
+      const loyaltyCard = config.registerType === 'radiant6-us' ? loyaltyCardFromScan(cmd.barcode) : null;
+      if (loyaltyCard) {
+        logSys(`Loyalty scan inject: ${cmd.barcode} → 1024 card ${loyaltyCard}`);
+        dispatch(session.loyalty(loyaltyCard));
+        return;
+      }
+      const hit = pricebookIndex.get(cmd.barcode) ?? quickKeys.find((p) => p.code === cmd.barcode);
+      const item = hit
+        ? { code: hit.code, description: hit.description, priceCents: hit.priceCents, quantity: cmd.quantity }
+        : { code: cmd.barcode, description: `UPC ${cmd.barcode}`, priceCents: 100, quantity: cmd.quantity };
       logSys(`Completer inject: ${cmd.barcode} ×${cmd.quantity} → ${item.description}`);
       dispatch(session.addItem(item));
       setInjectSeq((n) => n + 1);
@@ -484,6 +497,17 @@ export function useEmulator(): {
       addCustom: (input: { code: string; description: string; priceCents: number; quantity: number }) =>
         dispatch(session.addItem(input)),
       scan: (code: string, description?: string) => {
+        // Legacy parity: the Radiant6 emulator family (Canada inherits the US
+        // class) turns loyalty-prefixed scans into a 1024 sign-in. Topaz has
+        // no such intercept — its loyalty is the explicit LOYALTY action.
+        const loyaltyCard =
+          config.registerType === 'radiant6-us' || config.registerType === 'radiant6-canada'
+            ? loyaltyCardFromScan(code)
+            : null;
+        if (loyaltyCard) {
+          dispatch(session.loyalty(loyaltyCard));
+          return;
+        }
         const hit = pricebookIndex.get(code) ?? quickKeys.find((p) => p.code === code);
         dispatch(
           session.addItem(

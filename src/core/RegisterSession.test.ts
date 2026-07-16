@@ -296,34 +296,45 @@ describe('RegisterSession — verifone (Topaz plaintext VJ + non-authoritative p
     expect(msgs[0].data).toContain('CSH: ');
   });
 
-  it('addItem emits a plaintext VJ item line plus a pole item echo', () => {
+  it('addItem emits a plaintext VJ item line plus pole item echo and running TOTAL', () => {
     const msgs = topaz().addItem({ code: '049000000443', description: 'COKE 20OZ', priceCents: 229 });
     const vj = msgs.filter((m) => m.channel === 'vj');
     const pole = msgs.filter((m) => m.channel === 'pole');
     expect(vj.at(-1)!.data).toContain('COKE 20OZ');
     expect(vj.at(-1)!.data).toContain('2.29');
-    expect(pole).toHaveLength(1);
+    // Legacy parity: item window + running TOTAL window (the player's only
+    // mid-basket Balance Due signal in Topaz mode). 229 + 5% tax = 240.
+    expect(pole).toHaveLength(2);
+    expect(pole[1].data).toContain('TOTAL           2.40');
   });
 
-  it('voidLine emits an explicit V line with the negative extended amount', () => {
+  it('voidLine emits an explicit V line with the negative extended amount + pole refresh', () => {
     const s = topaz();
     s.addItem({ code: 'a', description: 'COKE 20OZ', priceCents: 229, quantity: 2 });
     const msgs = s.voidLine(1);
-    expect(msgs).toHaveLength(1);
-    expect(msgs[0].data).toContain('V COKE 20OZ');
-    expect(msgs[0].data).toContain('-4.58');
+    const vj = msgs.filter((m) => m.channel === 'vj');
+    expect(vj).toHaveLength(1);
+    expect(vj[0].data).toContain('V COKE 20OZ');
+    expect(vj[0].data).toContain('-4.58');
+    const pole = msgs.filter((m) => m.channel === 'pole');
+    expect(pole.at(-1)!.data).toContain('TOTAL           0.00');
   });
 
   it('qty and price changes become void + re-add pairs (Topaz has no override events)', () => {
     const s = topaz();
     s.addItem({ code: 'a', description: 'COKE 20OZ', priceCents: 229 });
     const qtyMsgs = s.setQuantity(1, 3);
-    expect(qtyMsgs).toHaveLength(2);
-    expect(qtyMsgs[0].data).toContain('-2.29');
-    expect(qtyMsgs[1].data).toContain('6.87');
+    const qtyVj = qtyMsgs.filter((m) => m.channel === 'vj');
+    expect(qtyVj).toHaveLength(2);
+    expect(qtyVj[0].data).toContain('-2.29');
+    expect(qtyVj[1].data).toContain('6.87');
+    // Running pole TOTAL follows the mutation: 687 + 5% tax = 721.
+    expect(qtyMsgs.filter((m) => m.channel === 'pole').at(-1)!.data).toContain('TOTAL           7.21');
     const priceMsgs = s.setPrice(1, 100);
-    expect(priceMsgs[0].data).toContain('-6.87');
-    expect(priceMsgs[1].data).toContain('3.00');
+    const priceVj = priceMsgs.filter((m) => m.channel === 'vj');
+    expect(priceVj[0].data).toContain('-6.87');
+    expect(priceVj[1].data).toContain('3.00');
+    expect(priceMsgs.filter((m) => m.channel === 'pole').at(-1)!.data).toContain('TOTAL           3.15');
   });
 
   it('tender is cents-exact: Sub Total, TAX, TOTAL, CASH, ST#/TRAN# with pole windows', () => {

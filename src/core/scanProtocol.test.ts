@@ -1,5 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { drainScanBuffer, parseScanToken } from './scanProtocol';
+import { drainScanBuffer, loyaltyCardFromScan, parseScanToken } from './scanProtocol';
+
+describe('loyaltyCardFromScan', () => {
+  it('strips the magstripe format char from D7826/D8018 reads', () => {
+    expect(loyaltyCardFromScan('D7826026030000349999')).toBe('7826026030000349999');
+    expect(loyaltyCardFromScan('D8018782603800034999992')).toBe('8018782603800034999992');
+  });
+
+  it('passes bare 8018 card barcodes through unchanged', () => {
+    expect(loyaltyCardFromScan('8018782603800034999992')).toBe('8018782603800034999992');
+  });
+
+  it('returns null for ordinary item barcodes and UPC coupons', () => {
+    expect(loyaltyCardFromScan('049000000443')).toBeNull();
+    expect(loyaltyCardFromScan('801700000001')).toBeNull(); // 8017… is not a loyalty prefix
+    expect(loyaltyCardFromScan('')).toBeNull();
+  });
+
+  it('trims surrounding whitespace before matching', () => {
+    expect(loyaltyCardFromScan(' 8018782603800034999992 ')).toBe('8018782603800034999992');
+  });
+});
 
 describe('parseScanToken', () => {
   it('parses the default UPC-A template output: A + 11 digits + literal c', () => {
