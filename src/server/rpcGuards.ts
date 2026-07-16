@@ -140,7 +140,13 @@ export function parseRegisterPlayerArgs(args: unknown[]): { playerKey: string; p
   };
 }
 
-function requireBackendUrl(value: unknown): string {
+/**
+ * Backend URLs are an SSRF surface: the server fetches them with the stored
+ * player credentials. Only origins the server itself trusts are accepted —
+ * the static datacenter hosts plus endpoint origins returned by a successful
+ * registration (see `EmulatorService.allowedBackendOrigins`).
+ */
+function requireBackendUrl(value: unknown, allowedOrigins: ReadonlySet<string>): string {
   const url = requireString(value, 'backendBaseUrl', MAX_URL_LENGTH);
   let parsed: URL;
   try {
@@ -151,13 +157,19 @@ function requireBackendUrl(value: unknown): string {
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     fail('backendBaseUrl: must be http(s)');
   }
+  if (!allowedOrigins.has(parsed.origin)) {
+    fail('backendBaseUrl: not a known backend origin (register the player first)');
+  }
   return url;
 }
 
-export function parseAdsArgs(args: unknown[]): { backendBaseUrl: string; playerCode: string; playerKey: string } {
+export function parseAdsArgs(
+  args: unknown[],
+  allowedOrigins: ReadonlySet<string>,
+): { backendBaseUrl: string; playerCode: string; playerKey: string } {
   const raw = asRecord(args[0], 'loadAds request');
   return {
-    backendBaseUrl: requireBackendUrl(raw.backendBaseUrl),
+    backendBaseUrl: requireBackendUrl(raw.backendBaseUrl, allowedOrigins),
     playerCode: requireString(raw.playerCode, 'playerCode', MAX_CODE_LENGTH),
     playerKey: requireString(raw.playerKey, 'playerKey', MAX_KEY_LENGTH),
   };
@@ -165,10 +177,11 @@ export function parseAdsArgs(args: unknown[]): { backendBaseUrl: string; playerC
 
 export function parseAdDetailArgs(
   args: unknown[],
+  allowedOrigins: ReadonlySet<string>,
 ): { backendBaseUrl: string; playerCode: string; playerKey: string; id: string } {
   const raw = asRecord(args[0], 'loadAdDetail request');
   return {
-    ...parseAdsArgs(args),
+    ...parseAdsArgs(args, allowedOrigins),
     id: requireString(raw.id, 'id', MAX_ID_LENGTH),
   };
 }

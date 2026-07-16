@@ -82,8 +82,8 @@ const handlers: Record<RpcMethod, (args: unknown[]) => unknown | Promise<unknown
   registerPlayer: (a) => service.registerPlayer(parseRegisterPlayerArgs(a)),
   loadPlayerKey: () => service.loadPlayerKey(),
   loadQuickKeys: (a) => service.loadQuickKeys(parseQuickKeysArgs(a, ALLOWED_DIRS)),
-  loadAds: (a) => service.loadAds(parseAdsArgs(a)),
-  loadAdDetail: (a) => service.loadAdDetail(parseAdDetailArgs(a)),
+  loadAds: (a) => service.loadAds(parseAdsArgs(a, service.allowedBackendOrigins())),
+  loadAdDetail: (a) => service.loadAdDetail(parseAdDetailArgs(a, service.allowedBackendOrigins())),
 };
 
 // --- HTTP (static renderer) -------------------------------------------------

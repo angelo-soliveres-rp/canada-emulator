@@ -108,6 +108,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** URL origin, or null when the string isn't a URL (empty endpoints etc.). */
+function originOf(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
 // The fields are typed optional because they arrive off the wire — the
 // null-return below is the validation, not defensive redundancy.
 function adsBackendContext(req: {
@@ -128,8 +137,27 @@ export class EmulatorService {
   private transport: PosTransport | null = null;
   private readonly statusListeners = new Set<StatusListener>();
   private readonly injectListeners = new Set<InjectListener>();
+  // Origins a client-supplied backendBaseUrl may target (SSRF guard for the
+  // web RPC boundary): the static datacenter hosts, widened with the endpoint
+  // origins each successful registration / persisted player.key returns.
+  private readonly backendOrigins = new Set<string>(
+    DATACENTERS.map((dc) => originOf(dc.host)).filter((o): o is string => o !== null),
+  );
 
   constructor(private readonly config: EmulatorServiceConfig) {}
+
+  /** Origins remote clients may pass as `backendBaseUrl` (see rpcGuards). */
+  allowedBackendOrigins(): ReadonlySet<string> {
+    return this.backendOrigins;
+  }
+
+  /** Trust the endpoint origins a registered datacenter handed back. */
+  private trustEndpointOrigins(endpoints: Record<string, string>): void {
+    for (const url of Object.values(endpoints)) {
+      const origin = originOf(url);
+      if (origin) this.backendOrigins.add(origin);
+    }
+  }
 
   /** Subscribe to status changes; returns an unsubscribe function. */
   onStatus(cb: StatusListener): () => void {
@@ -334,6 +362,7 @@ export class EmulatorService {
       for (const r of results) {
         if (r.status === 'fulfilled' && r.value) {
           console.log(`[GlobalInit] Done — registered as ${r.value.playerCode} on ${r.value.datacenter}`);
+          this.trustEndpointOrigins(r.value.endpoints);
           // Persist the generated config so endpoints survive a restart (legacy player.key file parity).
           await this.persistPlayerKeyFile(r.value.raw);
           return { ok: true, config: r.value };
@@ -358,6 +387,7 @@ export class EmulatorService {
         return { ok: false, error: 'player.key file present but has no player.code' };
       }
       console.log(`[GlobalInit] Loaded player.key file ← ${path} (player.code=${config.playerCode})`);
+      this.trustEndpointOrigins(config.endpoints);
       return { ok: true, config };
     } catch (err) {
       if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {

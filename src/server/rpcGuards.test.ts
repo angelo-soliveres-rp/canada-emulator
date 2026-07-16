@@ -107,13 +107,21 @@ describe('request-shaped parsers', () => {
     expect(() => parseRegisterPlayerArgs([{ playerKey: '' }])).toThrow(RpcArgError);
   });
 
-  it('parseAdsArgs/parseAdDetailArgs require an http(s) backend URL', () => {
+  it('parseAdsArgs/parseAdDetailArgs require an http(s) backend URL on an allowed origin', () => {
+    const origins = new Set(['https://player.example.com']);
     const good = { backendBaseUrl: 'https://player.example.com/api/lift/', playerCode: 'us-1', playerKey: 'k' };
-    expect(parseAdsArgs([good]).backendBaseUrl).toBe(good.backendBaseUrl);
-    expect(() => parseAdsArgs([{ ...good, backendBaseUrl: 'file:///etc/passwd' }])).toThrow(RpcArgError);
-    expect(() => parseAdsArgs([{ ...good, backendBaseUrl: 'not a url' }])).toThrow(RpcArgError);
-    expect(parseAdDetailArgs([{ ...good, id: 'ad-1' }]).id).toBe('ad-1');
-    expect(() => parseAdDetailArgs([{ ...good }])).toThrow(RpcArgError);
+    expect(parseAdsArgs([good], origins).backendBaseUrl).toBe(good.backendBaseUrl);
+    expect(() => parseAdsArgs([{ ...good, backendBaseUrl: 'file:///etc/passwd' }], origins)).toThrow(RpcArgError);
+    expect(() => parseAdsArgs([{ ...good, backendBaseUrl: 'not a url' }], origins)).toThrow(RpcArgError);
+    // SSRF guard: syntactically fine URLs on unknown origins are refused.
+    expect(() => parseAdsArgs([{ ...good, backendBaseUrl: 'https://169.254.169.254/latest/' }], origins)).toThrow(
+      RpcArgError,
+    );
+    expect(() => parseAdsArgs([{ ...good, backendBaseUrl: 'https://evil.example.net/api/lift/' }], origins)).toThrow(
+      RpcArgError,
+    );
+    expect(parseAdDetailArgs([{ ...good, id: 'ad-1' }], origins).id).toBe('ad-1');
+    expect(() => parseAdDetailArgs([{ ...good }], origins)).toThrow(RpcArgError);
   });
 });
 
