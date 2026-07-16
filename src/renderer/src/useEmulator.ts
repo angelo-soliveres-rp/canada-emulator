@@ -4,6 +4,7 @@ import {
   DEFAULT_POS_CONFIG,
   DEFAULT_PLAYER_CONFIG,
   normalizePlayerConfig,
+  channelsForRegisterType,
   type PosConfig,
   type PlayerConfig,
   type RegisterType,
@@ -45,7 +46,7 @@ export const PRICEBOOK: PricebookItem[] = [
   { code: '063500001019', description: 'Barre Choc', priceCents: 249 },
 ];
 
-const idleStatus: Status = { vj: 'disconnected', pole: 'disconnected' };
+const idleStatus: Status = { vj: 'disconnected', pole: 'disconnected', scanner: 'disconnected' };
 const PLAYER_CFG_KEY = 'r6ca.playerConfig';
 const PRICEBOOK_DIR_KEY = 'r6ca.pricebookDir';
 // Empty = use the sample pricebook bundled with this repo (resolved in the main
@@ -341,14 +342,28 @@ export function useEmulator(): {
       const item = hit
         ? { code: hit.code, description: hit.description, priceCents: hit.priceCents, quantity: cmd.quantity }
         : { code: cmd.barcode, description: `UPC ${cmd.barcode}`, priceCents: 100, quantity: cmd.quantity };
+      // US injects arrive as raw scans on the scanner socket — surface the
+      // inbound line under its own channel so the Scan filter reflects it.
+      if (config.registerType === 'radiant6-us') {
+        setLog((prev) =>
+          [
+            { id: logId.current++, channel: 'scanner' as const, text: `← ${cmd.barcode}`, at: new Date().toLocaleTimeString() },
+            ...prev,
+          ].slice(0, 300),
+        );
+      }
       logSys(`Completer inject: ${cmd.barcode} ×${cmd.quantity} → ${item.description}`);
       dispatch(session.addItem(item));
       setInjectSeq((n) => n + 1);
     });
-  }, [pricebookIndex, quickKeys, session, dispatch, logSys]);
+  }, [pricebookIndex, quickKeys, session, dispatch, logSys, config.registerType]);
 
   const connect = useCallback(async () => {
-    logSys(`Connecting to ${config.host} (VJ ${config.vjPort}, pole ${config.polePort})…`);
+    const ports: Record<string, number> = { vj: config.vjPort, pole: config.polePort, scanner: config.scannerPort };
+    const summary = channelsForRegisterType(config.registerType)
+      .map((ch) => `${ch} ${ports[ch]}`)
+      .join(', ');
+    logSys(`Connecting to ${config.host} (${summary})…`);
     const s = await window.emulator.connect(config);
     setStatus(s);
   }, [config, logSys]);

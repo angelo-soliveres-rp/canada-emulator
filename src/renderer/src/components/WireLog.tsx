@@ -10,6 +10,7 @@ const FILTERS: ReadonlyArray<{ key: ChannelFilter; label: string }> = [
   { key: 'all', label: 'All' },
   { key: 'vj', label: 'VJ' },
   { key: 'pole', label: 'Pole' },
+  { key: 'scanner', label: 'Scan' },
   { key: 'sys', label: 'Sys' },
 ];
 

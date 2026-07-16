@@ -5,10 +5,23 @@ import styles from './Transaction.module.css';
 
 type Emu = ReturnType<typeof useEmulator>;
 
+/**
+ * US loyalty quick actions — one per branch of the player's EventId 1024
+ * discriminator (route1024Event): a 22-digit 8018-prefix Circle K card signs
+ * in, an exactly-12-digit number rings as a coupon UPC (LIFTBAU-565), and a
+ * number inside the fuel-card BIN range is silently ignored by the player.
+ */
+const US_LOYALTY_ACTIONS: ReadonlyArray<{ label: string; hint: string; cardNumber: string }> = [
+  { label: 'Loyalty Card', hint: 'sign-in', cardNumber: '8018782603800034999992' },
+  { label: 'UPC Coupon', hint: '12-digit', cardNumber: '049000000443' },
+  { label: 'Fuel Card', hint: 'ignored', cardNumber: '782603797000000001' },
+];
+
 export function Transaction({ e, locale }: { e: Emu; locale: PosLocale }): JSX.Element {
   const { snapshot } = e;
   // Tender/void only make sense with a live basket; disabled when empty.
   const hasItems = snapshot.lines.some((l) => !l.voided);
+  const isUs = e.config.registerType === 'radiant6-us';
   const [manualCode, setManualCode] = useState('');
 
   const scanManual = (): void => {
@@ -95,6 +108,16 @@ export function Transaction({ e, locale }: { e: Emu; locale: PosLocale }): JSX.E
           <b>{formatCurrency(snapshot.totalCents, locale)}</b>
         </div>
       </div>
+
+      {isUs && (
+        <div className={styles.loyalty}>
+          {US_LOYALTY_ACTIONS.map((a) => (
+            <button key={a.label} onClick={() => e.loyalty(a.cardNumber)} title={`EventId 1024 — ${a.cardNumber}`}>
+              {a.label}<small>{a.hint}</small>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className={styles.tender}>
         <button className={styles.pay} disabled={!hasItems} onClick={() => e.tender('cash-exact')}>

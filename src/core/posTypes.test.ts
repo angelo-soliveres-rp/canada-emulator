@@ -5,6 +5,7 @@ import {
   DEFAULT_PLAYER_CONFIG,
   REGISTER_TYPES,
   portsForRegisterType,
+  channelsForRegisterType,
 } from './posTypes';
 
 describe('normalizePlayerConfig', () => {
@@ -33,6 +34,7 @@ describe('normalizePlayerConfig', () => {
       host: '127.0.0.1',
       vjPort: 5438,
       polePort: 5439,
+      scannerPort: 10000,
       registerType: 'radiant6-canada',
     });
   });
@@ -40,15 +42,26 @@ describe('normalizePlayerConfig', () => {
 
 describe('register types & ports', () => {
   it('maps Radiant6 Canada to VJ 5438 / pole 5439', () => {
-    expect(portsForRegisterType('radiant6-canada')).toEqual({ vjPort: 5438, polePort: 5439 });
+    expect(portsForRegisterType('radiant6-canada')).toEqual({ vjPort: 5438, polePort: 5439, scannerPort: 10000 });
   });
 
   it('maps Bulloch to VJ 5438 / pole 5440 (canonical legacy port)', () => {
-    expect(portsForRegisterType('bulloch')).toEqual({ vjPort: 5438, polePort: 5440 });
+    expect(portsForRegisterType('bulloch')).toEqual({ vjPort: 5438, polePort: 5440, scannerPort: 10000 });
   });
 
-  it('lists exactly the two CA register types with labels', () => {
-    expect(REGISTER_TYPES.map((r) => r.value)).toEqual(['radiant6-canada', 'bulloch']);
+  it('maps Radiant6 US to VJ 5438 / scanner 10000 (legacy scanner.ioParams=TCP:10000)', () => {
+    expect(portsForRegisterType('radiant6-us')).toEqual({ vjPort: 5438, polePort: 5439, scannerPort: 10000 });
+  });
+
+  it('lists the register types with labels', () => {
+    expect(REGISTER_TYPES.map((r) => r.value)).toEqual(['radiant6-canada', 'bulloch', 'radiant6-us']);
     expect(REGISTER_TYPES.find((r) => r.value === 'bulloch')?.label).toBe('Bulloch');
+    expect(REGISTER_TYPES.find((r) => r.value === 'radiant6-us')?.label).toBe('Radiant6 US');
+  });
+
+  it('opens only the channels each register family uses', () => {
+    expect(channelsForRegisterType('radiant6-canada')).toEqual(['vj', 'pole']);
+    expect(channelsForRegisterType('bulloch')).toEqual(['pole']);
+    expect(channelsForRegisterType('radiant6-us')).toEqual(['vj', 'scanner']);
   });
 });

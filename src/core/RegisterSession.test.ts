@@ -189,3 +189,83 @@ describe('RegisterSession — Bulloch (pole-only)', () => {
     expect(s.snapshot().tx).toBe(2);
   });
 });
+
+describe('RegisterSession — radiant6-us (VJ-only, cents-exact, VJ-authoritative totals)', () => {
+  const us = (): RegisterSession => new RegisterSession({ registerType: 'radiant6-us' });
+
+  it('opens the lane on the VJ alone — no pole messages ever', () => {
+    const s = us();
+    const msgs = s.open();
+    expect(eventIds(msgs)).toEqual(['1001', '1009']);
+    expect(msgs.every((m) => m.channel === 'vj')).toBe(true);
+  });
+
+  it('addItem emits only the 1011 (no pole windows) with the Barcode field', () => {
+    const s = us();
+    const msgs = s.addItem({ code: '049000000443', description: 'Coke', priceCents: 229 });
+    expect(msgs.every((m) => m.channel === 'vj')).toBe(true);
+    expect(eventIds(msgs)).toEqual(['1001', '1009', '1011']);
+    expect(msgs.at(-1)!.data).toContain('Barcode=049000000443');
+  });
+
+  it('voidLine emits 1012 carrying the voided line Barcode (US-only field)', () => {
+    const s = us();
+    s.addItem({ code: '049000000443', description: 'Coke', priceCents: 229 });
+    const msgs = s.voidLine(1);
+    expect(eventIds(msgs)).toEqual(['1012']);
+    expect(msgs[0].data).toContain('Barcode=049000000443');
+  });
+
+  it('tender is cents-exact: 1005 subtotal → 1020 tax → 1007 → 1008 → 1002, never 1022 rounding', () => {
+    const s = us();
+    // 3 × $0.99 = $2.97 subtotal, 5% tax = $0.15, total $3.12 — a total that
+    // Canada would round to $3.10 and stamp with an Arrondir 1022.
+    s.addItem({ code: 'a', description: 'Gum', priceCents: 99, quantity: 3 });
+    const msgs = s.tender('cash-exact');
+    expect(eventIds(msgs)).toEqual(['1005', '1020', '1007', '1008', '1002']);
+    expect(msgs.every((m) => m.channel === 'vj')).toBe(true);
+    expect(msgs[0].data).toContain('Amount=2.97'); // 1005 subtotal
+    expect(msgs[1].data).toContain('Amount=0.15'); // 1020 tax
+    expect(msgs[2].data).toContain('Amount=3.12'); // 1007 exact tender — no 5¢ rounding
+    expect(msgs[3].data).toContain('Amount=0.00'); // 1008 change
+    expect(msgs[4].data).toContain('SubtotalAmount=2.97');
+    expect(msgs[4].data).toContain('TaxAmount=0.15');
+    expect(msgs[4].data).toContain('TotalAmount=3.12');
+  });
+
+  it('next-dollar tender computes change from the exact (unrounded) total', () => {
+    const s = us();
+    s.addItem({ code: 'a', description: 'Gum', priceCents: 99, quantity: 3 }); // total 312
+    const msgs = s.tender('next-dollar'); // tendered 400
+    expect(msgs.find((m) => m.data.includes('EventId=1008'))!.data).toContain('Amount=0.88');
+  });
+
+  it('voidTicket emits a Cancelled 1002 with no pole and no amount fields', () => {
+    const s = us();
+    s.addItem({ code: 'a', description: 'Gum', priceCents: 99 });
+    const msgs = s.voidTicket();
+    expect(eventIds(msgs)).toEqual(['1002']);
+    expect(msgs[0].data).toContain('TransactionCompletionType=Cancelled');
+    expect(msgs[0].data).not.toContain('SubtotalAmount');
+  });
+
+  it('loyalty routes through the US encoder (1024)', () => {
+    const s = us();
+    const msgs = s.loyalty('8018782603800034999992');
+    expect(msgs.at(-1)!.data).toContain('EventId=1024');
+    expect(msgs.at(-1)!.data).toContain('DiscountCardNumber=8018782603800034999992');
+  });
+
+  it('setLocale(fr) is a no-op — the US wire is monolingual en-US', () => {
+    const s = us();
+    s.setLocale('fr');
+    expect(s.locale).toBe('en');
+  });
+
+  it('never emits an Arrondir/Rounding 1022 across a full sale', () => {
+    const s = us();
+    s.addItem({ code: 'a', description: 'Gum', priceCents: 99, quantity: 3 });
+    const all = [...s.tender('cash-exact')].map((m) => m.data).join('');
+    expect(all).not.toMatch(/EventId=1022|Arrondir|Rounding/);
+  });
+});

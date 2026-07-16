@@ -27,7 +27,7 @@ export function useUiMode(): [UiMode, (m: UiMode) => void] {
   return [mode, set];
 }
 
-export type ChannelFilter = 'all' | 'vj' | 'pole' | 'sys';
+export type ChannelFilter = 'all' | 'vj' | 'pole' | 'scanner' | 'sys';
 
 export interface LogView {
   filter: ChannelFilter;
@@ -45,7 +45,7 @@ export function useLogView(log: LogEntry[]): LogView {
   const [query, setQuery] = useState('');
 
   const counts = useMemo<Record<ChannelFilter, number>>(() => {
-    const c: Record<ChannelFilter, number> = { all: log.length, vj: 0, pole: 0, sys: 0 };
+    const c: Record<ChannelFilter, number> = { all: log.length, vj: 0, pole: 0, scanner: 0, sys: 0 };
     for (const l of log) c[l.channel] += 1;
     return c;
   }, [log]);

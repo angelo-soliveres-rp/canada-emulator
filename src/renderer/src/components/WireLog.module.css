@@ -20,6 +20,7 @@
 .tag { font-size: 9px; font-weight: 600; letter-spacing: .06em; padding: 1px 6px; border-radius: var(--r-sm); flex: 0 0 auto; color: #06121f; }
 .vj { background: var(--ch-vj); }
 .pole { background: var(--ch-pole); color: #231603; }
+.scanner { background: var(--ch-scanner); color: #06210f; }
 .sys { background: var(--ch-sys); color: #0c0f14; }
 .text { color: var(--text); white-space: pre-wrap; word-break: break-all; }
 .empty { color: var(--text-faint); font-family: var(--font-ui); font-size: var(--t-sm); padding: 26px 4px; text-align: center; }

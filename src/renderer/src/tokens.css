@@ -19,7 +19,7 @@
   --ok:#37b86b; --ok-hover:#46c97b; --ok-quiet:rgba(55,184,107,.14);
   --warn:#e0a23c; --warn-quiet:rgba(224,162,60,.14);
   /* log channels */
-  --ch-vj:#5b9bf3; --ch-pole:#e0a23c; --ch-sys:#7a8696;
+  --ch-vj:#5b9bf3; --ch-pole:#e0a23c; --ch-scanner:#4cbf8f; --ch-sys:#7a8696;
   /* type */
   --font-ui:'IBM Plex Sans',ui-sans-serif,system-ui,-apple-system,sans-serif;
   --font-mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;

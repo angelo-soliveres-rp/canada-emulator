@@ -1,6 +1,14 @@
 import type { useEmulator } from '../useEmulator';
 import type { UiMode } from '../hooks/ui';
-import { REGISTER_TYPES, portsForRegisterType, type ConnState, type RegisterType, type Status } from '../../../core/posTypes';
+import {
+  REGISTER_TYPES,
+  portsForRegisterType,
+  channelsForRegisterType,
+  type Channel,
+  type ConnState,
+  type RegisterType,
+  type Status,
+} from '../../../core/posTypes';
 import { GearIcon } from '../icons';
 import styles from './CommandBar.module.css';
 
@@ -16,9 +24,15 @@ function dotClass(s: ConnState): string {
   return s === 'connected' ? styles.on : s === 'connecting' ? styles.connecting : styles.off;
 }
 
+const CHANNEL_CHIPS: Record<Channel, { label: string; title: string; port: (c: Emu['config']) => number }> = {
+  vj: { label: 'VJ', title: 'Virtual Journal', port: (c) => c.vjPort },
+  pole: { label: 'POLE', title: 'Pole display', port: (c) => c.polePort },
+  scanner: { label: 'SCAN', title: 'Scanner (player injects)', port: (c) => c.scannerPort },
+};
+
 function StatusCluster({ status, config }: { status: Status; config: Emu['config'] }): JSX.Element {
-  const usesVj = config.registerType === 'radiant6-canada';
-  const states: ConnState[] = usesVj ? [status.vj, status.pole] : [status.pole];
+  const channels = channelsForRegisterType(config.registerType);
+  const states: ConnState[] = channels.map((ch) => status[ch]);
   const overall = states.every((s) => s === 'connected')
     ? 'live'
     : states.some((s) => s === 'connecting')
@@ -35,14 +49,16 @@ function StatusCluster({ status, config }: { status: Status; config: Emu['config
         {label}
       </span>
       <span className={styles.chips}>
-        {usesVj && (
-          <span className={styles.chip} title={`Virtual Journal — ${status.vj}`}>
-            <span className={`${styles.dot} ${dotClass(status.vj)}`} />VJ<small>:{config.vjPort}</small>
-          </span>
-        )}
-        <span className={styles.chip} title={`Pole display — ${status.pole}`}>
-          <span className={`${styles.dot} ${dotClass(status.pole)}`} />POLE<small>:{config.polePort}</small>
-        </span>
+        {channels.map((ch) => {
+          const chip = CHANNEL_CHIPS[ch];
+          return (
+            <span key={ch} className={styles.chip} title={`${chip.title} — ${status[ch]}`}>
+              <span className={`${styles.dot} ${dotClass(status[ch])}`} />
+              {chip.label}
+              <small>:{chip.port(config)}</small>
+            </span>
+          );
+        })}
       </span>
     </div>
   );
@@ -75,7 +91,7 @@ export function CommandBar({
       <select
         className={styles.regtype}
         value={e.config.registerType}
-        title="Register type — sets the VJ / pole ports"
+        title="Register type — sets the VJ / pole / scanner ports"
         onChange={(ev) => {
           const registerType = ev.target.value as RegisterType;
           e.setConfig({ ...e.config, registerType, ...portsForRegisterType(registerType) });
@@ -105,26 +121,28 @@ export function CommandBar({
         ))}
       </div>
 
-      <div className={styles.locale} role="radiogroup" aria-label="Locale">
-        <button
-          type="button"
-          role="radio"
-          aria-checked={locale === 'en'}
-          className={locale === 'en' ? styles.locOn : styles.loc}
-          onClick={() => e.setLocale('en')}
-        >
-          EN
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={locale === 'fr'}
-          className={locale === 'fr' ? styles.locOn : styles.loc}
-          onClick={() => e.setLocale('fr')}
-        >
-          FR
-        </button>
-      </div>
+      {e.config.registerType !== 'radiant6-us' && (
+        <div className={styles.locale} role="radiogroup" aria-label="Locale">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={locale === 'en'}
+            className={locale === 'en' ? styles.locOn : styles.loc}
+            onClick={() => e.setLocale('en')}
+          >
+            EN
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={locale === 'fr'}
+            className={locale === 'fr' ? styles.locOn : styles.loc}
+            onClick={() => e.setLocale('fr')}
+          >
+            FR
+          </button>
+        </div>
+      )}
 
       <button className={styles.setup} onClick={onOpenSetup} title="Connection setup" aria-label="Connection setup">
         <GearIcon size={16} />

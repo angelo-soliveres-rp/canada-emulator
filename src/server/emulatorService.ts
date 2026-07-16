@@ -32,7 +32,7 @@ import type { InjectCommand } from '../core/injectProtocol';
 
 export type { Channel, Status } from './PosTransport';
 
-const IDLE_STATUS: Status = { vj: 'disconnected', pole: 'disconnected' };
+const IDLE_STATUS: Status = { vj: 'disconnected', pole: 'disconnected', scanner: 'disconnected' };
 
 /** Host-specific paths injected by the entry point (Electron app dirs vs server cwd). */
 export interface EmulatorServiceConfig {

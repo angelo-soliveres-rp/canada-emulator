@@ -1,15 +1,19 @@
 # Canada POS Emulator
 
 A standalone **Electron + React + TypeScript** desktop app that simulates a
-Canadian register and emits the exact wire stream **CK Player 2.0**'s Canada
-plugins consume. Use it to drive and test the player without physical POS
-hardware.
+register and emits the exact wire stream **CK Player 2.0**'s register plugins
+consume. Use it to drive and test the player without physical POS hardware.
 
-Supports two register types:
+Supports three register types:
 
 - **Radiant6 Canada** — Virtual Journal (`EventId=…`) **+** Pole Display.
 - **Bulloch** — **pole-display only** (`[C000]/[C110]/[C120]/[C121]/[C200]`); no
   virtual journal, mirroring the real Bulloch lane.
+- **Radiant6 US** — Virtual Journal only (**no pole display**) **+** a scanner
+  reverse channel for player barcode injects. The US baseline is the inverse of
+  Canada where it matters: the VJ is authoritative for subtotal/tax (EventId
+  1005/1020 **enabled**), cash is cents-exact (no Arrondir), and the wire is
+  monolingual en-US.
 
 It replaces the empty `Radiant6CanadaRegisterEmulator` / `BullochRegisterEmulator`
 stubs in the legacy `liftck_player` emulator module.
@@ -30,9 +34,29 @@ stubs in the legacy `liftck_player` emulator module.
   Item`, `[C121] CLEAR SALE`, `[C200] Sale TRANS= TOTAL= CHNG= TAX=`. **No VJ
   socket is opened** for Bulloch (items are pole-authoritative).
 
+**Radiant6 US** (`radiant6-us` register type)
+- **Virtual Journal** (TCP, default `127.0.0.1:5438`): 1001 register open,
+  1009 basket start, 1011 item add (with `Barcode`), 1012 void (with
+  `Barcode`), 1013 price override, 1014 qty change, **1005 subtotal**,
+  **1020 tax**, 1007 tender, 1008 change, 1024 EasyPay/loyalty, 1002 basket end
+  (with `SubtotalAmount/TaxAmount/TotalAmount`). Amounts are decimal **dollars**
+  (`6.87`), negatives use a leading minus — never parentheses or locale formats.
+- **Scanner** (TCP, default `127.0.0.1:10000`): inbound-only — the player
+  writes completer barcode injects here (`BarcodeScanner.writeToHost`); the
+  emulator rings the item and echoes the 1011 back on the VJ, which is also
+  what releases the player's Zynstra age-verification scan queue.
+- **No pole display** — the pole socket is never opened in US mode.
+
 Canada rules honoured: tax/balance are **pole-authoritative** (the Radiant6 VJ
 never emits `1005`/`1020`); cash rounds to the nearest 5¢ and emits `Arrondir`;
 fr-CA balance uses the legacy `dû` → `U+FFFD` → space substitution.
+
+US rules honoured: the VJ is **authoritative** for subtotal/tax (`1005`/`1020`
+emitted before tender); **no cash rounding** — cents-exact, and `1022` is never
+emitted (the US player decodes it as an unconditional discount void, no
+Arrondir guard); monolingual **en-US** (the locale toggle hides in US mode);
+loyalty 1024 quick actions cover the player's discriminator branches (22-digit
+sign-in card / exactly-12-digit UPC coupon / in-range fuel card).
 
 ## Run
 
@@ -109,7 +133,7 @@ No external `liftck_player` checkout is required — the emulator ships its own:
 
 ## Verify against CK Player 2.0
 
-1. Configure the CK Player 2.0 Canada register in `system.properties`:
+1. Configure the CK Player 2.0 register in `system.properties`:
    - **Radiant6 Canada:** `virtualjournal.ioParams=TCP:5438`,
      `poledisp.className=plugins/radiant6-canada/Radiant6CanadaPoleDisplay`,
      `poledisp.ioParams=TCP:5439`.
@@ -117,13 +141,19 @@ No external `liftck_player` checkout is required — the emulator ships its own:
      `register.realTimeInputs=poledisp`,
      `poledisp.className=plugins/bulloch/BullochPoleDisplay`,
      `poledisp.ioParams=TCP:5440`.
+   - **Radiant6 US:**
+     `virtualjournal.className=plugins/radiant6/Radiant6VirtualJournal`,
+     `virtualjournal.ioParams=TCP:5438`,
+     `scanner.className=plugins/radiant6-us/Radiant6SerialScanner`,
+     `scanner.ioParams=TCP:10000` (no pole display module).
 2. Start CK Player 2.0 (it listens on those ports), then the emulator → Connect.
 3. Tap quick keys / scan / tender. The matching register type's items appear in
    the player's basket and shopper receipt.
 
-> The `parser-roundtrip` test imports CK Player 2.0's **real** Radiant6 Canada
-> parsers from the sibling repo and asserts the emulator's output decodes to the
-> expected `RegisterEvent`s — automated proof of compatibility.
+> The `parser-roundtrip` (Canada) and `us-parser-roundtrip` (US) tests import
+> CK Player 2.0's **real** parsers from the sibling repo and assert the
+> emulator's output decodes to the expected `RegisterEvent`s — automated proof
+> of compatibility.
 
 ## Tips
 
@@ -147,8 +177,9 @@ No external `liftck_player` checkout is required — the emulator ships its own:
 - `src/main/` (Electron) — thin: window creation + IPC handlers that delegate to
   `emulatorService`.
 - `src/core/` — pure, browser-safe, unit-tested: `currency`, `Basket`,
-  `Radiant6CanadaEncoder`, `BullochEncoder`, `RegisterSession` (routes by
-  register type), `quickkeys`, `pricebook`, `adTriggers`, `globalInit`,
+  `Radiant6CanadaEncoder`, `Radiant6USEncoder`, `BullochEncoder`,
+  `RegisterSession` (routes by register type), `scanProtocol` (US inbound
+  scanner injects), `quickkeys`, `pricebook`, `adTriggers`, `globalInit`,
   `posTypes`, `webRpc` (shared client/server message protocol).
 - `src/renderer/` — React UI (`useEmulator` hook over `RegisterSession`). The
   only platform seam is `window.emulator` (`EmulatorBridge`).

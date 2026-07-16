@@ -28,6 +28,11 @@
 .grand span { font-size: var(--t-sm); text-transform: uppercase; letter-spacing: .1em; color: var(--text-muted); }
 .grand b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--t-2xl); font-weight: 600; color: var(--text); letter-spacing: -.01em; }
 
+.loyalty { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); margin-top: var(--s2); }
+.loyalty button { display: flex; flex-direction: column; align-items: center; gap: 1px; background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border-2); border-radius: var(--r-md); padding: 8px 6px; font-size: var(--t-sm); font-weight: 500; cursor: pointer; }
+.loyalty button:hover { color: var(--text); border-color: var(--accent); }
+.loyalty button small { font-weight: 400; opacity: .68; font-size: 9px; letter-spacing: .04em; font-family: var(--font-mono); }
+
 .tender { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); margin-top: var(--s2); }
 .pay { display: flex; flex-direction: column; align-items: center; gap: 1px; background: var(--ok); color: #06210f; border: 0; border-radius: var(--r-md); padding: 12px 6px; font-size: var(--t-base); font-weight: 600; cursor: pointer; transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease); }
 .pay small { font-weight: 500; opacity: .68; font-size: 9px; letter-spacing: .04em; }

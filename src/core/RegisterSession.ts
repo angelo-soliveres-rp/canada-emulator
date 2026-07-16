@@ -7,6 +7,7 @@
  */
 import { Basket } from './Basket';
 import { Radiant6CanadaEncoder } from './Radiant6CanadaEncoder';
+import { Radiant6USEncoder } from './Radiant6USEncoder';
 import { BullochEncoder } from './BullochEncoder';
 import type { Channel, RegisterType } from './posTypes';
 import type { PosLocale } from './currency';
@@ -58,6 +59,7 @@ export interface RegisterSessionOptions {
 
 export class RegisterSession {
   private readonly encoder: Radiant6CanadaEncoder;
+  private readonly us: Radiant6USEncoder;
   private readonly bulloch: BullochEncoder;
   private readonly registerType: RegisterType;
   private readonly taxRateBps: number;
@@ -73,6 +75,10 @@ export class RegisterSession {
       terminalNumber: options.terminalNumber ?? 1,
       clock: options.clock,
     });
+    this.us = new Radiant6USEncoder({
+      terminalNumber: options.terminalNumber ?? 1,
+      clock: options.clock,
+    });
     this.bulloch = new BullochEncoder();
     this.registerType = options.registerType ?? 'radiant6-canada';
     this.taxRateBps = options.taxRateBps ?? 500;
@@ -85,6 +91,11 @@ export class RegisterSession {
   /** Bulloch is pole-only (no virtual journal); Radiant6 Canada is VJ + pole. */
   private get isBulloch(): boolean {
     return this.registerType === 'bulloch';
+  }
+
+  /** Radiant6 US is VJ-only (no pole display) — 1005/1020 enabled, no rounding, en-US. */
+  private get isUs(): boolean {
+    return this.registerType === 'radiant6-us';
   }
 
   /** A Bulloch `[C110]` item-add line carrying the running basket totals. */
@@ -117,6 +128,8 @@ export class RegisterSession {
   }
 
   setLocale(locale: PosLocale): void {
+    // Radiant6 US is monolingual en-US — never let fr leak onto the US wire.
+    if (this.isUs && locale !== 'en') return;
     this.locale = locale;
   }
 
@@ -131,6 +144,13 @@ export class RegisterSession {
     this.started = true;
     if (this.isBulloch) {
       return [{ channel: 'pole', data: this.bulloch.newSale(this.locale) }];
+    }
+    if (this.isUs) {
+      // No pole display in the US — the lane opens on the VJ alone.
+      return [
+        { channel: 'vj', data: this.us.registerOpen({ tx: this.tx, operatorId: this.operatorId, operatorName: this.operatorName }) },
+        { channel: 'vj', data: this.us.basketStarted({ tx: this.tx }) },
+      ];
     }
     return [
       { channel: 'vj', data: this.encoder.registerOpen({ tx: this.tx, operatorId: this.operatorId, operatorName: this.operatorName }) },
@@ -160,6 +180,21 @@ export class RegisterSession {
       if (this.isBulloch) {
         return [this.bullochItemMessage(li.code, li.description, li.quantity, li.unitPriceCents)];
       }
+      if (this.isUs) {
+        return [
+          {
+            channel: 'vj',
+            data: this.us.itemAdd({
+              tx: this.tx,
+              lineNumber: li.lineNumber,
+              barcode: li.code,
+              description: li.description,
+              priceCents: li.unitPriceCents,
+              quantity: li.quantity,
+            }),
+          },
+        ];
+      }
       return [
         {
           channel: 'vj',
@@ -186,6 +221,12 @@ export class RegisterSession {
         this.basket.voidItem(lineNumber);
         return [this.bullochVoidMessage(description)];
       }
+      if (this.isUs) {
+        const barcode = this.basket.find(lineNumber)?.code ?? '';
+        this.basket.voidItem(lineNumber);
+        // US 1012 carries the voided line's Barcode (Canada omits it).
+        return [{ channel: 'vj', data: this.us.itemVoid({ tx: this.tx, lineNumber, barcode }) }];
+      }
       this.basket.voidItem(lineNumber);
       return [
         { channel: 'vj', data: this.encoder.itemVoid({ tx: this.tx, lineNumber }) },
@@ -210,6 +251,11 @@ export class RegisterSession {
         ];
       }
       const extended = updated?.extendedCents() ?? 0;
+      if (this.isUs) {
+        return [
+          { channel: 'vj', data: this.us.qtyChange({ tx: this.tx, lineNumber, oldQuantity, newQuantity: quantity, extendedPriceCents: extended }) },
+        ];
+      }
       return [
         { channel: 'vj', data: this.encoder.qtyChange({ tx: this.tx, lineNumber, oldQuantity, newQuantity: quantity, extendedPriceCents: extended, locale: this.locale }) },
         this.balanceMessage(),
@@ -227,6 +273,11 @@ export class RegisterSession {
         return [
           this.bullochVoidMessage(description),
           this.bullochItemMessage(updated?.code ?? '', description, updated?.quantity ?? 1, priceCents),
+        ];
+      }
+      if (this.isUs) {
+        return [
+          { channel: 'vj', data: this.us.priceOverride({ tx: this.tx, lineNumber, newUnitPriceCents: priceCents }) },
         ];
       }
       return [
@@ -250,6 +301,13 @@ export class RegisterSession {
         this.started = false;
         return cleared;
       }
+      if (this.isUs) {
+        const end: WireMessage = { channel: 'vj', data: this.us.basketEnd({ tx: this.tx, type: 'Sales', completion: 'Cancelled' }) };
+        this.basket = new Basket({ taxRateBps: this.taxRateBps });
+        this.tx += 1;
+        this.started = false;
+        return [end];
+      }
       const end: WireMessage = { channel: 'vj', data: this.encoder.basketEnd({ tx: this.tx, type: 'Sales', completion: 'Cancelled' }) };
       this.basket = new Basket({ taxRateBps: this.taxRateBps });
       const balance = this.balanceMessage(); // pole balance now 0
@@ -266,18 +324,56 @@ export class RegisterSession {
   loyalty(cardNumber: string, cardId?: string): WireMessage[] {
     if (this.isBulloch) return [];
     return this.emit(() => [
-      { channel: 'vj', data: this.encoder.loyalty({ tx: this.tx, cardNumber, cardId }) },
+      {
+        channel: 'vj',
+        data: this.isUs
+          ? this.us.loyalty({ tx: this.tx, cardNumber, cardId })
+          : this.encoder.loyalty({ tx: this.tx, cardNumber, cardId }),
+      },
     ]);
   }
 
   /**
-   * Tender and finish the sale. Emits Arrondir rounding (if the cash total
-   * differs from the exact total), the tender (1007), the pole change window,
-   * the change (1008) and basket end (1002). Resets for the next sale.
+   * Tender and finish the sale. Canada emits Arrondir rounding (if the cash
+   * total differs from the exact total), the tender (1007), the pole change
+   * window, the change (1008) and basket end (1002). The US is cents-exact
+   * (no rounding, no pole) and — being VJ-authoritative — reports subtotal
+   * (1005) and tax (1020) before the tender, then closes with a 1002 carrying
+   * SubtotalAmount/TaxAmount/TotalAmount. Resets for the next sale.
    */
   tender(kind: TenderKind, amountCents?: number): WireMessage[] {
     return this.emit(() => {
       const exactTotal = this.basket.totalCents();
+      if (this.isUs) {
+        let tendered: number;
+        if (kind === 'cash-exact') tendered = exactTotal;
+        else if (kind === 'next-dollar') tendered = this.basket.nextDollarCents();
+        else tendered = amountCents ?? exactTotal;
+        const usChange = Math.max(0, tendered - exactTotal);
+        const subtotal = this.basket.subtotalCents();
+        const tax = this.basket.taxCents();
+        const sale: WireMessage[] = [
+          { channel: 'vj', data: this.us.subtotal({ tx: this.tx, amountCents: subtotal }) },
+          { channel: 'vj', data: this.us.tax({ tx: this.tx, amountCents: tax }) },
+          { channel: 'vj', data: this.us.tender({ tx: this.tx, amountCents: tendered, mopDescription: 'Cash' }) },
+          { channel: 'vj', data: this.us.change({ tx: this.tx, amountCents: usChange }) },
+          {
+            channel: 'vj',
+            data: this.us.basketEnd({
+              tx: this.tx,
+              type: 'Sales',
+              completion: 'Completed',
+              subtotalCents: subtotal,
+              taxCents: tax,
+              totalCents: exactTotal,
+            }),
+          },
+        ];
+        this.basket = new Basket({ taxRateBps: this.taxRateBps });
+        this.tx += 1;
+        this.started = false;
+        return sale;
+      }
       const roundedTotal = this.basket.roundCashTotal();
 
       let tendered: number;

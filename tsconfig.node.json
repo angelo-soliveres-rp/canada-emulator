@@ -10,6 +10,6 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["electron.vite.config.ts", "vite.web.config.ts", "src/main/**/*", "src/preload/**/*", "src/server/**/*", "src/core/posTypes.ts", "src/core/pricebook.ts", "src/core/globalInit.ts", "src/core/quickkeys.ts", "src/core/injectProtocol.ts", "src/core/adTriggers.ts", "src/core/webRpc.ts"],
+  "include": ["electron.vite.config.ts", "vite.web.config.ts", "src/main/**/*", "src/preload/**/*", "src/server/**/*", "src/core/posTypes.ts", "src/core/pricebook.ts", "src/core/globalInit.ts", "src/core/quickkeys.ts", "src/core/injectProtocol.ts", "src/core/scanProtocol.ts", "src/core/adTriggers.ts", "src/core/webRpc.ts"],
   "exclude": ["src/**/*.test.ts"]
 }

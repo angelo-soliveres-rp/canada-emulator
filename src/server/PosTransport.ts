@@ -1,14 +1,16 @@
 /**
- * PosTransport — Electron main-process TCP client to CK Player 2.0's CA
- * adapters. The player listens as a TCP server on the virtual-journal and
- * pole-display ports (default 5438 / 5439); this connects as a client and
- * writes the encoder's bytes. Auto-reconnects when the player restarts.
+ * PosTransport — TCP client to CK Player 2.0's register adapters. The player
+ * listens as a TCP server on the virtual-journal / pole-display / scanner
+ * ports (defaults 5438 / 5439 / 10000); this connects as a client and writes
+ * the encoder's bytes. Auto-reconnects when the player restarts.
  *
  * Node-only (uses `net`). Holds NO business logic — it ships bytes.
  */
 import net from 'net';
+import { channelsForRegisterType } from '../core/posTypes';
 import type { Channel, ConnState, Status, PosConfig, RegisterType } from '../core/posTypes';
 import { parseInjectCommand, type InjectCommand } from '../core/injectProtocol';
+import { drainScanBuffer } from '../core/scanProtocol';
 
 export type { Channel, ConnState, Status } from '../core/posTypes';
 
@@ -34,6 +36,8 @@ export class PosTransport {
   private injectListeners: Array<(cmd: InjectCommand) => void> = [];
   /** Line buffer for inbound VJ bytes (player→register completer injects). */
   private vjBuffer = '';
+  /** Buffer for inbound scanner bytes (US player→register barcode injects). */
+  private scannerBuffer = '';
 
   constructor(config: PosTransportConfig) {
     this.host = config.host;
@@ -42,19 +46,22 @@ export class PosTransport {
     this.conns = {
       vj: { socket: null, state: 'disconnected', port: config.vjPort, reconnectTimer: null },
       pole: { socket: null, state: 'disconnected', port: config.polePort, reconnectTimer: null },
+      scanner: { socket: null, state: 'disconnected', port: config.scannerPort, reconnectTimer: null },
     };
   }
 
   /**
-   * Begin connecting the channels this register uses. Resolves once the
-   * attempts are initiated. Bulloch is pole-only (no virtual journal), so the
-   * VJ socket is never opened — avoids endless ECONNREFUSED retries against a
-   * port the Bulloch player doesn't listen on.
+   * Begin connecting only the channels this register type uses. Resolves once
+   * the attempts are initiated. Opening an unused channel would spin endless
+   * ECONNREFUSED retries against a port the player doesn't listen on —
+   * Bulloch is pole-only, Radiant6 US is VJ + scanner (no pole display),
+   * Radiant6 Canada is VJ + pole.
    */
   async connect(): Promise<void> {
     this.closed = false;
-    if (this.registerType !== 'bulloch') this.openChannel('vj');
-    this.openChannel('pole');
+    for (const channel of channelsForRegisterType(this.registerType)) {
+      this.openChannel(channel);
+    }
   }
 
   private openChannel(channel: Channel): void {
@@ -73,11 +80,18 @@ export class PosTransport {
     socket.on('connect', () => {
       console.log(`[PosTransport] ${channel}: connected to ${this.host}:${conn.port}`);
       if (channel === 'vj') this.vjBuffer = '';
+      if (channel === 'scanner') this.scannerBuffer = '';
       this.setState(channel, 'connected');
     });
-    // The player writes completer injects back down the VJ socket.
+    // The player writes completer injects back down the VJ socket (Canada,
+    // EventId 2001) or the scanner socket (US, raw barcode scans). It also
+    // ACKs every received US VJ line with a bare \r\n — handleVjData's line
+    // splitter drops those empties, so no special casing is needed.
     if (channel === 'vj') {
       socket.on('data', (data: Buffer) => this.handleVjData(data.toString('utf-8')));
+    }
+    if (channel === 'scanner') {
+      socket.on('data', (data: Buffer) => this.handleScannerData(data.toString('utf-8')));
     }
     socket.on('error', (err: Error) => {
       console.warn(`[PosTransport] ${channel}: socket error — ${err.message}`);
@@ -126,8 +140,24 @@ export class PosTransport {
     }
   }
 
+  /**
+   * Drain buffered scanner bytes into barcode scans and surface each as an
+   * InjectCommand — the US equivalent of the Canada VJ inject (the UI rings
+   * the item and echoes 1011 back, which also releases the player's Zynstra
+   * age-verification queue).
+   */
+  private handleScannerData(chunk: string): void {
+    const { barcodes, rest } = drainScanBuffer(this.scannerBuffer + chunk);
+    this.scannerBuffer = rest;
+    for (const barcode of barcodes) {
+      const cmd: InjectCommand = { barcode, quantity: 1 };
+      console.log(`[PosTransport] ← scanner inject: ${JSON.stringify(cmd)}`);
+      for (const l of this.injectListeners) l(cmd);
+    }
+  }
+
   status(): Status {
-    return { vj: this.conns.vj.state, pole: this.conns.pole.state };
+    return { vj: this.conns.vj.state, pole: this.conns.pole.state, scanner: this.conns.scanner.state };
   }
 
   onStatus(listener: (s: Status) => void): void {
@@ -149,7 +179,7 @@ export class PosTransport {
 
   close(): void {
     this.closed = true;
-    for (const channel of ['vj', 'pole'] as Channel[]) {
+    for (const channel of ['vj', 'pole', 'scanner'] as Channel[]) {
       const conn = this.conns[channel];
       if (conn.reconnectTimer) {
         clearTimeout(conn.reconnectTimer);

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { channelsForRegisterType } from '../../../core/posTypes';
 import type { useEmulator } from '../useEmulator';
 import { useProfiles } from '../hooks/profiles';
 import { CloseIcon } from '../icons';
@@ -179,8 +180,15 @@ export function SetupDrawer({ e, open, onClose }: { e: Emu; open: boolean; onClo
               <input value={e.config.host} spellCheck={false} onChange={(ev) => e.setConfig({ ...e.config, host: ev.target.value })} />
             </label>
             <div className={styles.ports}>
-              <span>VJ <b>:{e.config.vjPort}</b></span>
-              <span>Pole <b>:{e.config.polePort}</b></span>
+              {channelsForRegisterType(e.config.registerType).map((ch) => {
+                const ports = { vj: e.config.vjPort, pole: e.config.polePort, scanner: e.config.scannerPort };
+                const labels = { vj: 'VJ', pole: 'Pole', scanner: 'Scanner' };
+                return (
+                  <span key={ch}>
+                    {labels[ch]} <b>:{ports[ch]}</b>
+                  </span>
+                );
+              })}
             </div>
             <div className={styles.actions}>
               <button className={styles.primary} onClick={() => void e.connect()}>

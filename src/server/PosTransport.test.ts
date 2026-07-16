@@ -59,7 +59,7 @@ describe('PosTransport', () => {
     await transport.connect();
     await wait(50);
 
-    expect(transport.status()).toEqual({ vj: 'connected', pole: 'connected' });
+    expect(transport.status()).toEqual({ vj: 'connected', pole: 'connected', scanner: 'disconnected' });
   });
 
   it('sends VJ and pole bytes to the right server byte-for-byte', async () => {
@@ -115,10 +115,41 @@ describe('PosTransport', () => {
     await wait(50);
 
     // Pole is up; VJ is intentionally skipped even though a server is listening.
-    expect(transport.status()).toEqual({ vj: 'disconnected', pole: 'connected' });
+    expect(transport.status()).toEqual({ vj: 'disconnected', pole: 'connected', scanner: 'disconnected' });
     expect(transport.send('vj', 'EventId=1001\r\n')).toBe(false);
     await wait(20);
     expect(vj.received()).toBe('');
+  });
+
+  it('for the radiant6-us register type connects VJ + scanner and never touches the pole', async () => {
+    const vj = await listen();
+    const pole = await listen();
+    const scanner = await listen();
+    servers.push(vj.server, pole.server, scanner.server);
+
+    transport = new PosTransport({
+      host: '127.0.0.1',
+      vjPort: vj.port,
+      polePort: pole.port,
+      scannerPort: scanner.port,
+      registerType: 'radiant6-us',
+    });
+    const injects: Array<{ barcode: string; quantity: number }> = [];
+    transport.onInject((cmd) => injects.push(cmd));
+    await transport.connect();
+    await wait(50);
+
+    expect(transport.status()).toEqual({ vj: 'connected', pole: 'disconnected', scanner: 'connected' });
+    expect(transport.send('pole', 'anything')).toBe(false);
+
+    // Player ACKs a US VJ line with a bare \r\n — must be silently tolerated.
+    vj.push('\r\n\r\n');
+    // Player injects a completer barcode on the scanner socket (default UPC-A
+    // template output: A + 11 digits + literal check-digit placeholder).
+    scanner.push('\r\nA04900000044c\r\n');
+    await wait(50);
+
+    expect(injects).toEqual([{ barcode: '049000000443', quantity: 1 }]);
   });
 
   it('auto-reconnects after the server drops and comes back', async () => {
