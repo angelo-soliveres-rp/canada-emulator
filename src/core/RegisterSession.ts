@@ -8,7 +8,9 @@
 import { Basket } from './Basket';
 import { Radiant6CanadaEncoder } from './Radiant6CanadaEncoder';
 import { Radiant6USEncoder } from './Radiant6USEncoder';
+import { TopazEncoder } from './TopazEncoder';
 import { BullochEncoder } from './BullochEncoder';
+import { isUsRegisterType } from './posTypes';
 import type { Channel, RegisterType } from './posTypes';
 import type { PosLocale } from './currency';
 
@@ -60,6 +62,7 @@ export interface RegisterSessionOptions {
 export class RegisterSession {
   private readonly encoder: Radiant6CanadaEncoder;
   private readonly us: Radiant6USEncoder;
+  private readonly topaz: TopazEncoder;
   private readonly bulloch: BullochEncoder;
   private readonly registerType: RegisterType;
   private readonly taxRateBps: number;
@@ -79,6 +82,10 @@ export class RegisterSession {
       terminalNumber: options.terminalNumber ?? 1,
       clock: options.clock,
     });
+    this.topaz = new TopazEncoder({
+      registerId: options.terminalNumber ?? 101,
+      clock: options.clock,
+    });
     this.bulloch = new BullochEncoder();
     this.registerType = options.registerType ?? 'radiant6-canada';
     this.taxRateBps = options.taxRateBps ?? 500;
@@ -96,6 +103,11 @@ export class RegisterSession {
   /** Radiant6 US is VJ-only (no pole display) — 1005/1020 enabled, no rounding, en-US. */
   private get isUs(): boolean {
     return this.registerType === 'radiant6-us';
+  }
+
+  /** Verifone Topaz — plaintext VJ (authoritative) + non-authoritative pole, en-US. */
+  private get isTopaz(): boolean {
+    return this.registerType === 'verifone';
   }
 
   /** A Bulloch `[C110]` item-add line carrying the running basket totals. */
@@ -128,8 +140,8 @@ export class RegisterSession {
   }
 
   setLocale(locale: PosLocale): void {
-    // Radiant6 US is monolingual en-US — never let fr leak onto the US wire.
-    if (this.isUs && locale !== 'en') return;
+    // US families are monolingual en-US — never let fr leak onto the US wire.
+    if (isUsRegisterType(this.registerType) && locale !== 'en') return;
     this.locale = locale;
   }
 
@@ -151,6 +163,11 @@ export class RegisterSession {
         { channel: 'vj', data: this.us.registerOpen({ tx: this.tx, operatorId: this.operatorId, operatorName: this.operatorName }) },
         { channel: 'vj', data: this.us.basketStarted({ tx: this.tx }) },
       ];
+    }
+    if (this.isTopaz) {
+      // Topaz has no explicit open/basket-start events; the cashier line is
+      // the only lane-open signal the journal carries.
+      return [{ channel: 'vj', data: this.topaz.cashier(this.operatorName) }];
     }
     return [
       { channel: 'vj', data: this.encoder.registerOpen({ tx: this.tx, operatorId: this.operatorId, operatorName: this.operatorName }) },
@@ -195,6 +212,12 @@ export class RegisterSession {
           },
         ];
       }
+      if (this.isTopaz) {
+        return [
+          { channel: 'vj', data: this.topaz.itemAdd({ description: li.description, quantity: li.quantity, extendedCents: li.extendedCents() }) },
+          { channel: 'pole', data: this.topaz.poleItem(li.description, li.extendedCents()) },
+        ];
+      }
       return [
         {
           channel: 'vj',
@@ -227,6 +250,20 @@ export class RegisterSession {
         // US 1012 carries the voided line's Barcode (Canada omits it).
         return [{ channel: 'vj', data: this.us.itemVoid({ tx: this.tx, lineNumber, barcode }) }];
       }
+      if (this.isTopaz) {
+        const li = this.basket.find(lineNumber);
+        this.basket.voidItem(lineNumber);
+        return [
+          {
+            channel: 'vj',
+            data: this.topaz.itemVoid({
+              description: li?.description ?? '',
+              quantity: li?.quantity ?? 1,
+              extendedCents: li?.extendedCents() ?? 0,
+            }),
+          },
+        ];
+      }
       this.basket.voidItem(lineNumber);
       return [
         { channel: 'vj', data: this.encoder.itemVoid({ tx: this.tx, lineNumber }) },
@@ -240,6 +277,7 @@ export class RegisterSession {
       const li = this.basket.find(lineNumber);
       const oldQuantity = li?.quantity ?? 1;
       const description = li?.description ?? '';
+      const oldExtended = li?.extendedCents() ?? 0;
       this.basket.setQuantity(lineNumber, quantity);
       const updated = this.basket.find(lineNumber);
       if (this.isBulloch) {
@@ -256,6 +294,13 @@ export class RegisterSession {
           { channel: 'vj', data: this.us.qtyChange({ tx: this.tx, lineNumber, oldQuantity, newQuantity: quantity, extendedPriceCents: extended }) },
         ];
       }
+      if (this.isTopaz) {
+        // Topaz has no qty-change event — the journal shows a void + re-add.
+        return [
+          { channel: 'vj', data: this.topaz.itemVoid({ description, quantity: oldQuantity, extendedCents: oldExtended }) },
+          { channel: 'vj', data: this.topaz.itemAdd({ description, quantity: updated?.quantity ?? quantity, extendedCents: extended }) },
+        ];
+      }
       return [
         { channel: 'vj', data: this.encoder.qtyChange({ tx: this.tx, lineNumber, oldQuantity, newQuantity: quantity, extendedPriceCents: extended, locale: this.locale }) },
         this.balanceMessage(),
@@ -265,7 +310,10 @@ export class RegisterSession {
 
   setPrice(lineNumber: number, priceCents: number): WireMessage[] {
     return this.emit(() => {
-      const description = this.basket.find(lineNumber)?.description ?? '';
+      const before = this.basket.find(lineNumber);
+      const description = before?.description ?? '';
+      const oldQuantity = before?.quantity ?? 1;
+      const oldExtended = before?.extendedCents() ?? 0;
       this.basket.setPrice(lineNumber, priceCents);
       const updated = this.basket.find(lineNumber);
       if (this.isBulloch) {
@@ -278,6 +326,13 @@ export class RegisterSession {
       if (this.isUs) {
         return [
           { channel: 'vj', data: this.us.priceOverride({ tx: this.tx, lineNumber, newUnitPriceCents: priceCents }) },
+        ];
+      }
+      if (this.isTopaz) {
+        // Topaz has no price-override event — void + re-add at the new price.
+        return [
+          { channel: 'vj', data: this.topaz.itemVoid({ description, quantity: oldQuantity, extendedCents: oldExtended }) },
+          { channel: 'vj', data: this.topaz.itemAdd({ description, quantity: updated?.quantity ?? 1, extendedCents: updated?.extendedCents() ?? 0 }) },
         ];
       }
       return [
@@ -308,6 +363,13 @@ export class RegisterSession {
         this.started = false;
         return [end];
       }
+      if (this.isTopaz) {
+        const end: WireMessage = { channel: 'vj', data: this.topaz.voidTicket(this.tx) };
+        this.basket = new Basket({ taxRateBps: this.taxRateBps });
+        this.tx += 1;
+        this.started = false;
+        return [end];
+      }
       const end: WireMessage = { channel: 'vj', data: this.encoder.basketEnd({ tx: this.tx, type: 'Sales', completion: 'Cancelled' }) };
       this.basket = new Basket({ taxRateBps: this.taxRateBps });
       const balance = this.balanceMessage(); // pole balance now 0
@@ -323,6 +385,11 @@ export class RegisterSession {
    */
   loyalty(cardNumber: string, cardId?: string): WireMessage[] {
     if (this.isBulloch) return [];
+    if (this.isTopaz) {
+      // Plaintext `LOYALTY <digits>` line — 10 digits routes as a mobile
+      // sign-in on the player, anything else as a card swipe.
+      return this.emit(() => [{ channel: 'vj', data: this.topaz.loyalty(cardNumber) }]);
+    }
     return this.emit(() => [
       {
         channel: 'vj',
@@ -368,6 +435,30 @@ export class RegisterSession {
               totalCents: exactTotal,
             }),
           },
+        ];
+        this.basket = new Basket({ taxRateBps: this.taxRateBps });
+        this.tx += 1;
+        this.started = false;
+        return sale;
+      }
+      if (this.isTopaz) {
+        // Cents-exact like all US families. The Topaz journal prints
+        // Sub Total → TAX → TOTAL → tender → ST#/TRAN# close; change exists
+        // only on the pole display (the VJ cascade has no change branch).
+        let tendered: number;
+        if (kind === 'cash-exact') tendered = exactTotal;
+        else if (kind === 'next-dollar') tendered = this.basket.nextDollarCents();
+        else tendered = amountCents ?? exactTotal;
+        const topazChange = Math.max(0, tendered - exactTotal);
+        const sale: WireMessage[] = [
+          { channel: 'vj', data: this.topaz.subTotal(this.basket.subtotalCents()) },
+          { channel: 'vj', data: this.topaz.tax(this.basket.taxCents()) },
+          { channel: 'vj', data: this.topaz.total(exactTotal) },
+          { channel: 'pole', data: this.topaz.poleTotal(exactTotal) },
+          { channel: 'vj', data: this.topaz.tender({ amountCents: tendered }) },
+          { channel: 'pole', data: this.topaz.poleTender(tendered) },
+          { channel: 'pole', data: this.topaz.poleChange(topazChange) },
+          { channel: 'vj', data: this.topaz.basketEnd({ storeNumber: '1', tx: this.tx }) },
         ];
         this.basket = new Basket({ taxRateBps: this.taxRateBps });
         this.tx += 1;

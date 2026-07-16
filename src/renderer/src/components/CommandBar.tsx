@@ -4,6 +4,7 @@ import {
   REGISTER_TYPES,
   portsForRegisterType,
   channelsForRegisterType,
+  isUsRegisterType,
   type Channel,
   type ConnState,
   type RegisterType,
@@ -121,7 +122,7 @@ export function CommandBar({
         ))}
       </div>
 
-      {e.config.registerType !== 'radiant6-us' && (
+      {!isUsRegisterType(e.config.registerType) && (
         <div className={styles.locale} role="radiogroup" aria-label="Locale">
           <button
             type="button"

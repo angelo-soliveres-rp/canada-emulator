@@ -5,6 +5,7 @@ import {
   DEFAULT_PLAYER_CONFIG,
   normalizePlayerConfig,
   channelsForRegisterType,
+  isUsRegisterType,
   type PosConfig,
   type PlayerConfig,
   type RegisterType,
@@ -342,9 +343,9 @@ export function useEmulator(): {
       const item = hit
         ? { code: hit.code, description: hit.description, priceCents: hit.priceCents, quantity: cmd.quantity }
         : { code: cmd.barcode, description: `UPC ${cmd.barcode}`, priceCents: 100, quantity: cmd.quantity };
-      // US injects arrive as raw scans on the scanner socket — surface the
-      // inbound line under its own channel so the Scan filter reflects it.
-      if (config.registerType === 'radiant6-us') {
+      // US-family injects arrive as raw scans on the scanner socket — surface
+      // the inbound line under its own channel so the Scan filter reflects it.
+      if (isUsRegisterType(config.registerType)) {
         setLog((prev) =>
           [
             { id: logId.current++, channel: 'scanner' as const, text: `← ${cmd.barcode}`, at: new Date().toLocaleTimeString() },

@@ -4,7 +4,7 @@ A standalone **Electron + React + TypeScript** desktop app that simulates a
 register and emits the exact wire stream **CK Player 2.0**'s register plugins
 consume. Use it to drive and test the player without physical POS hardware.
 
-Supports three register types:
+Supports four register types:
 
 - **Radiant6 Canada** — Virtual Journal (`EventId=…`) **+** Pole Display.
 - **Bulloch** — **pole-display only** (`[C000]/[C110]/[C120]/[C121]/[C200]`); no
@@ -14,6 +14,10 @@ Supports three register types:
   Canada where it matters: the VJ is authoritative for subtotal/tax (EventId
   1005/1020 **enabled**), cash is cents-exact (no Arrondir), and the wire is
   monolingual en-US.
+- **Verifone Topaz** — plaintext virtual journal (authoritative) **+** pole
+  display (present but **non-authoritative**) **+** scanner reverse channel.
+  Serial on real hardware, TCP here (the player's `IODeviceFactory` accepts
+  either). Same US rules: cents-exact, decimal dollars, en-US.
 
 It replaces the empty `Radiant6CanadaRegisterEmulator` / `BullochRegisterEmulator`
 stubs in the legacy `liftck_player` emulator module.
@@ -46,6 +50,19 @@ stubs in the legacy `liftck_player` emulator module.
   emulator rings the item and echoes the 1011 back on the VJ, which is also
   what releases the player's Zynstra age-verification scan queue.
 - **No pole display** — the pole socket is never opened in US mode.
+
+**Verifone Topaz** (`verifone` register type)
+- **Virtual Journal** (TCP, default `127.0.0.1:5438`): plaintext frames
+  `MM/dd/yy HH:mm:ss <reg> <payload>` — `CSH:` cashier, item / `V` void column
+  lines, `Sub Total` / `TAX` / `TOTAL`, `CASH` tender, `LOYALTY <digits>`
+  (10 digits = mobile sign-in, else card swipe), `VOID TICKET`, and
+  `ST# … TRAN#` basket end. Qty/price changes are void + re-add lines (Topaz
+  has no override events); change appears only on the pole.
+- **Pole Display** (TCP, default `127.0.0.1:5439`): ESC-framed 20-char windows
+  (`TOTAL` / `CASH` / `CHANGE`); item windows are emitted for realism but the
+  player ignores them (VJ-authoritative).
+- **Scanner** (TCP, default `127.0.0.1:10000`): same inbound completer-inject
+  channel as Radiant6 US.
 
 Canada rules honoured: tax/balance are **pole-authoritative** (the Radiant6 VJ
 never emits `1005`/`1020`); cash rounds to the nearest 5¢ and emits `Arrondir`;
@@ -146,14 +163,21 @@ No external `liftck_player` checkout is required — the emulator ships its own:
      `virtualjournal.ioParams=TCP:5438`,
      `scanner.className=plugins/radiant6-us/Radiant6SerialScanner`,
      `scanner.ioParams=TCP:10000` (no pole display module).
+   - **Verifone Topaz:**
+     `virtualjournal.className=plugins/verifone/TopazVirtualJournal`,
+     `virtualjournal.ioParams=TCP:5438`,
+     `poledisp.className=plugins/verifone/TopazPoleDisplay`,
+     `poledisp.ioParams=TCP:5439`,
+     `scanner.className=plugins/verifone/TopazBarcodeScanner`,
+     `scanner.ioParams=TCP:10000`.
 2. Start CK Player 2.0 (it listens on those ports), then the emulator → Connect.
 3. Tap quick keys / scan / tender. The matching register type's items appear in
    the player's basket and shopper receipt.
 
-> The `parser-roundtrip` (Canada) and `us-parser-roundtrip` (US) tests import
-> CK Player 2.0's **real** parsers from the sibling repo and assert the
-> emulator's output decodes to the expected `RegisterEvent`s — automated proof
-> of compatibility.
+> The `parser-roundtrip` (Canada), `us-parser-roundtrip` (Radiant6 US) and
+> `topaz-parser-roundtrip` (Verifone) tests import CK Player 2.0's **real**
+> parsers from the sibling repo and assert the emulator's output decodes to
+> the expected `RegisterEvent`s — automated proof of compatibility.
 
 ## Tips
 
@@ -177,10 +201,11 @@ No external `liftck_player` checkout is required — the emulator ships its own:
 - `src/main/` (Electron) — thin: window creation + IPC handlers that delegate to
   `emulatorService`.
 - `src/core/` — pure, browser-safe, unit-tested: `currency`, `Basket`,
-  `Radiant6CanadaEncoder`, `Radiant6USEncoder`, `BullochEncoder`,
-  `RegisterSession` (routes by register type), `scanProtocol` (US inbound
-  scanner injects), `quickkeys`, `pricebook`, `adTriggers`, `globalInit`,
-  `posTypes`, `webRpc` (shared client/server message protocol).
+  `Radiant6CanadaEncoder`, `Radiant6USEncoder`, `TopazEncoder`,
+  `BullochEncoder`, `RegisterSession` (routes by register type),
+  `scanProtocol` (US inbound scanner injects), `quickkeys`, `pricebook`,
+  `adTriggers`, `globalInit`, `posTypes`, `webRpc` (shared client/server
+  message protocol).
 - `src/renderer/` — React UI (`useEmulator` hook over `RegisterSession`). The
   only platform seam is `window.emulator` (`EmulatorBridge`).
 - `src/preload/` — typed `window.emulator` bridge for Electron (IPC).

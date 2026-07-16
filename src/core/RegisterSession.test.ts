@@ -269,3 +269,78 @@ describe('RegisterSession — radiant6-us (VJ-only, cents-exact, VJ-authoritativ
     expect(all).not.toMatch(/EventId=1022|Arrondir|Rounding/);
   });
 });
+
+describe('RegisterSession — verifone (Topaz plaintext VJ + non-authoritative pole)', () => {
+  const topaz = (): RegisterSession => new RegisterSession({ registerType: 'verifone' });
+
+  it('opens the lane with only a CSH: cashier line on the VJ', () => {
+    const msgs = topaz().open();
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].channel).toBe('vj');
+    expect(msgs[0].data).toContain('CSH: ');
+  });
+
+  it('addItem emits a plaintext VJ item line plus a pole item echo', () => {
+    const msgs = topaz().addItem({ code: '049000000443', description: 'COKE 20OZ', priceCents: 229 });
+    const vj = msgs.filter((m) => m.channel === 'vj');
+    const pole = msgs.filter((m) => m.channel === 'pole');
+    expect(vj.at(-1)!.data).toContain('COKE 20OZ');
+    expect(vj.at(-1)!.data).toContain('2.29');
+    expect(pole).toHaveLength(1);
+  });
+
+  it('voidLine emits an explicit V line with the negative extended amount', () => {
+    const s = topaz();
+    s.addItem({ code: 'a', description: 'COKE 20OZ', priceCents: 229, quantity: 2 });
+    const msgs = s.voidLine(1);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].data).toContain('V COKE 20OZ');
+    expect(msgs[0].data).toContain('-4.58');
+  });
+
+  it('qty and price changes become void + re-add pairs (Topaz has no override events)', () => {
+    const s = topaz();
+    s.addItem({ code: 'a', description: 'COKE 20OZ', priceCents: 229 });
+    const qtyMsgs = s.setQuantity(1, 3);
+    expect(qtyMsgs).toHaveLength(2);
+    expect(qtyMsgs[0].data).toContain('-2.29');
+    expect(qtyMsgs[1].data).toContain('6.87');
+    const priceMsgs = s.setPrice(1, 100);
+    expect(priceMsgs[0].data).toContain('-6.87');
+    expect(priceMsgs[1].data).toContain('3.00');
+  });
+
+  it('tender is cents-exact: Sub Total, TAX, TOTAL, CASH, ST#/TRAN# with pole windows', () => {
+    const s = topaz();
+    s.addItem({ code: 'a', description: 'GUM PACK', priceCents: 99, quantity: 3 }); // 297 + 15 tax = 312
+    const msgs = s.tender('next-dollar'); // tendered 400, change 88
+    const vjText = msgs.filter((m) => m.channel === 'vj').map((m) => m.data).join('');
+    expect(vjText).toContain('Sub Total          2.97');
+    expect(vjText).toContain('TAX          0.15');
+    expect(vjText).toContain('TOTAL          3.12'); // exact — never rounded to 3.10
+    expect(vjText).toContain('CASH          4.00');
+    expect(vjText).toMatch(/ST# \d+ DR# \d+ TRAN# \d+/);
+    const poleText = msgs.filter((m) => m.channel === 'pole').map((m) => m.data).join('');
+    expect(poleText).toContain('TOTAL           3.12');
+    expect(poleText).toContain('CHANGE          0.88');
+  });
+
+  it('voidTicket emits VOID TICKET with the transaction number', () => {
+    const s = topaz();
+    s.addItem({ code: 'a', description: 'GUM PACK', priceCents: 99 });
+    const msgs = s.voidTicket();
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].data).toContain('VOID TICKET 1');
+  });
+
+  it('loyalty emits a plaintext LOYALTY line', () => {
+    const msgs = topaz().loyalty('8018782603800034999992');
+    expect(msgs.at(-1)!.data).toContain('LOYALTY 8018782603800034999992');
+  });
+
+  it('setLocale(fr) is a no-op — Verifone is a US family', () => {
+    const s = topaz();
+    s.setLocale('fr');
+    expect(s.locale).toBe('en');
+  });
+});

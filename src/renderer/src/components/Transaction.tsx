@@ -1,27 +1,44 @@
 import { useState } from 'react';
 import type { useEmulator } from '../useEmulator';
+import type { RegisterType } from '../../../core/posTypes';
 import { formatCurrency, type PosLocale } from '../../../core/currency';
 import styles from './Transaction.module.css';
 
 type Emu = ReturnType<typeof useEmulator>;
 
+interface LoyaltyAction {
+  label: string;
+  hint: string;
+  cardNumber: string;
+}
+
 /**
- * US loyalty quick actions — one per branch of the player's EventId 1024
- * discriminator (route1024Event): a 22-digit 8018-prefix Circle K card signs
- * in, an exactly-12-digit number rings as a coupon UPC (LIFTBAU-565), and a
- * number inside the fuel-card BIN range is silently ignored by the player.
+ * Loyalty quick actions per US register family — one per branch of the
+ * player's discriminator.
+ *
+ * Radiant6 US (EventId 1024 route1024Event): a 22-digit 8018-prefix Circle K
+ * card signs in, an exactly-12-digit number rings as a coupon UPC
+ * (LIFTBAU-565), and a number inside the fuel-card BIN range is silently
+ * ignored. Verifone Topaz (`LOYALTY <digits>` line): exactly 10 digits is a
+ * mobile sign-in, anything else a card swipe.
  */
-const US_LOYALTY_ACTIONS: ReadonlyArray<{ label: string; hint: string; cardNumber: string }> = [
-  { label: 'Loyalty Card', hint: 'sign-in', cardNumber: '8018782603800034999992' },
-  { label: 'UPC Coupon', hint: '12-digit', cardNumber: '049000000443' },
-  { label: 'Fuel Card', hint: 'ignored', cardNumber: '782603797000000001' },
-];
+const LOYALTY_ACTIONS: Partial<Record<RegisterType, ReadonlyArray<LoyaltyAction>>> = {
+  'radiant6-us': [
+    { label: 'Loyalty Card', hint: 'sign-in', cardNumber: '8018782603800034999992' },
+    { label: 'UPC Coupon', hint: '12-digit', cardNumber: '049000000443' },
+    { label: 'Fuel Card', hint: 'ignored', cardNumber: '782603797000000001' },
+  ],
+  verifone: [
+    { label: 'Loyalty Card', hint: 'swipe', cardNumber: '8018782603800034999992' },
+    { label: 'Mobile #', hint: '10-digit', cardNumber: '5551234567' },
+  ],
+};
 
 export function Transaction({ e, locale }: { e: Emu; locale: PosLocale }): JSX.Element {
   const { snapshot } = e;
   // Tender/void only make sense with a live basket; disabled when empty.
   const hasItems = snapshot.lines.some((l) => !l.voided);
-  const isUs = e.config.registerType === 'radiant6-us';
+  const loyaltyActions = LOYALTY_ACTIONS[e.config.registerType];
   const [manualCode, setManualCode] = useState('');
 
   const scanManual = (): void => {
@@ -109,10 +126,10 @@ export function Transaction({ e, locale }: { e: Emu; locale: PosLocale }): JSX.E
         </div>
       </div>
 
-      {isUs && (
+      {loyaltyActions && (
         <div className={styles.loyalty}>
-          {US_LOYALTY_ACTIONS.map((a) => (
-            <button key={a.label} onClick={() => e.loyalty(a.cardNumber)} title={`EventId 1024 — ${a.cardNumber}`}>
+          {loyaltyActions.map((a) => (
+            <button key={a.label} onClick={() => e.loyalty(a.cardNumber)} title={`Loyalty — ${a.cardNumber}`}>
               {a.label}<small>{a.hint}</small>
             </button>
           ))}

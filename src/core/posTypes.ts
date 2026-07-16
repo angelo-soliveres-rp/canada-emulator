@@ -10,7 +10,12 @@ export type ConnState = 'connected' | 'connecting' | 'disconnected';
 export type Status = Record<Channel, ConnState>;
 
 /** POS register types — each listens on its own VJ/pole/scanner ports. */
-export type RegisterType = 'radiant6-canada' | 'bulloch' | 'radiant6-us';
+export type RegisterType = 'radiant6-canada' | 'bulloch' | 'radiant6-us' | 'verifone';
+
+/** US register families — monolingual en-US, cents-exact, no fr machinery. */
+export function isUsRegisterType(type: RegisterType): boolean {
+  return type === 'radiant6-us' || type === 'verifone';
+}
 
 /**
  * Per-register-type defaults (the ports the player listens on). Radiant6 Canada
@@ -30,6 +35,7 @@ export const REGISTER_TYPES: ReadonlyArray<{
   { value: 'radiant6-canada', label: 'Radiant6 Canada', vjPort: 5438, polePort: 5439, scannerPort: 10000 },
   { value: 'bulloch', label: 'Bulloch', vjPort: 5438, polePort: 5440, scannerPort: 10000 },
   { value: 'radiant6-us', label: 'Radiant6 US', vjPort: 5438, polePort: 5439, scannerPort: 10000 },
+  { value: 'verifone', label: 'Verifone Topaz', vjPort: 5438, polePort: 5439, scannerPort: 10000 },
 ];
 
 /** Look up the VJ/pole/scanner ports for a register type. */
@@ -46,10 +52,13 @@ export function portsForRegisterType(
  *   - bulloch:         pole only (no virtual journal)
  *   - radiant6-us:     VJ (authoritative, 1005/1020 enabled) + scanner
  *                      (player→register completer injects); no pole display
+ *   - verifone:        VJ (authoritative plaintext journal) + pole (present
+ *                      but non-authoritative) + scanner (completer injects)
  */
 export function channelsForRegisterType(type: RegisterType): Channel[] {
   if (type === 'bulloch') return ['pole'];
   if (type === 'radiant6-us') return ['vj', 'scanner'];
+  if (type === 'verifone') return ['vj', 'pole', 'scanner'];
   return ['vj', 'pole'];
 }
 

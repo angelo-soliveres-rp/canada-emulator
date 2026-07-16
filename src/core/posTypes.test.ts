@@ -6,6 +6,7 @@ import {
   REGISTER_TYPES,
   portsForRegisterType,
   channelsForRegisterType,
+  isUsRegisterType,
 } from './posTypes';
 
 describe('normalizePlayerConfig', () => {
@@ -54,14 +55,23 @@ describe('register types & ports', () => {
   });
 
   it('lists the register types with labels', () => {
-    expect(REGISTER_TYPES.map((r) => r.value)).toEqual(['radiant6-canada', 'bulloch', 'radiant6-us']);
+    expect(REGISTER_TYPES.map((r) => r.value)).toEqual(['radiant6-canada', 'bulloch', 'radiant6-us', 'verifone']);
     expect(REGISTER_TYPES.find((r) => r.value === 'bulloch')?.label).toBe('Bulloch');
     expect(REGISTER_TYPES.find((r) => r.value === 'radiant6-us')?.label).toBe('Radiant6 US');
+    expect(REGISTER_TYPES.find((r) => r.value === 'verifone')?.label).toBe('Verifone Topaz');
   });
 
   it('opens only the channels each register family uses', () => {
     expect(channelsForRegisterType('radiant6-canada')).toEqual(['vj', 'pole']);
     expect(channelsForRegisterType('bulloch')).toEqual(['pole']);
     expect(channelsForRegisterType('radiant6-us')).toEqual(['vj', 'scanner']);
+    expect(channelsForRegisterType('verifone')).toEqual(['vj', 'pole', 'scanner']);
+  });
+
+  it('classifies the US register families', () => {
+    expect(isUsRegisterType('radiant6-us')).toBe(true);
+    expect(isUsRegisterType('verifone')).toBe(true);
+    expect(isUsRegisterType('radiant6-canada')).toBe(false);
+    expect(isUsRegisterType('bulloch')).toBe(false);
   });
 });
