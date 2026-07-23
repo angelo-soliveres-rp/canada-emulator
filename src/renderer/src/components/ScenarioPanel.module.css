@@ -1,0 +1,59 @@
+.panel {
+  background: var(--bg); display: flex; flex-direction: column; min-height: 0; min-width: 0;
+}
+
+.head {
+  display: flex; align-items: center; gap: 7px; padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.title { font-size: var(--t-2xs); font-weight: 600; letter-spacing: .14em; color: var(--text-muted); }
+.count { font-family: var(--font-mono); font-size: var(--t-2xs); color: var(--text-faint); }
+.spacer { flex: 1; }
+.import {
+  background: transparent; border: 1px solid var(--border-2); color: var(--text-muted);
+  border-radius: var(--r-sm); padding: 2px 8px; font-size: var(--t-2xs); cursor: pointer;
+}
+.import:hover { color: var(--text); border-color: var(--accent); }
+
+.list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.empty { color: var(--text-faint); font-size: var(--t-xs); padding: 10px 6px; line-height: 1.5; }
+
+.row {
+  position: relative; display: flex; align-items: stretch;
+  background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--r-md);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.row:hover { border-color: var(--accent); }
+.rowOn { border-color: var(--accent); background: var(--surface-2); }
+.rowBtn {
+  flex: 1 1 auto; min-width: 0; text-align: left; background: transparent; border: 0; cursor: pointer;
+  padding: 9px 11px; display: flex; flex-direction: column; gap: 3px;
+}
+.name { font-size: var(--t-sm); font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { font-family: var(--font-mono); font-size: var(--t-2xs); color: var(--text-faint); }
+.ok { color: var(--ok); }
+.fail { color: var(--red); }
+.faint { color: var(--text-faint); }
+.running { color: var(--accent); }
+.del {
+  flex: 0 0 auto; background: transparent; border: 0; color: var(--text-faint); cursor: pointer;
+  padding: 0 9px; display: flex; align-items: center; border-radius: var(--r-md);
+}
+.del:hover { color: var(--red); }
+
+.saveBox { border-top: 1px dashed var(--border-2); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.hint { color: var(--text-faint); font-size: var(--t-2xs); line-height: 1.5; }
+.hint b { color: var(--text-muted); font-weight: 600; }
+.saveRow { display: flex; gap: 6px; }
+.nameInput {
+  flex: 1 1 auto; min-width: 0; background: var(--surface); border: 1px solid var(--border-2); color: var(--text);
+  border-radius: var(--r-sm); padding: 5px 8px; font-size: var(--t-xs);
+}
+.nameInput::placeholder { color: var(--text-faint); }
+.saveBtn {
+  flex: 0 0 auto; background: var(--accent-quiet); border: 1px solid var(--accent); color: var(--accent);
+  border-radius: var(--r-sm); padding: 5px 10px; font-size: var(--t-xs); font-weight: 600; cursor: pointer;
+}
+.saveBtn:hover:not(:disabled) { color: var(--accent-hover); }
+.saveBtn:disabled { opacity: .45; cursor: default; }
+.notice { color: var(--warn); font-size: var(--t-2xs); }

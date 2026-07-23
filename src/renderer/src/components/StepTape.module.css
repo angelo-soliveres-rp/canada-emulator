@@ -1,0 +1,39 @@
+.wrap { background: var(--bg); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+
+.head {
+  display: flex; align-items: baseline; gap: 8px; padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.title { font-size: var(--t-2xs); font-weight: 600; letter-spacing: .14em; color: var(--text-muted); }
+.subtitle { font-size: var(--t-2xs); color: var(--text-faint); }
+.spacer { flex: 1; }
+.export {
+  background: transparent; border: 0; color: var(--accent); cursor: pointer;
+  font-size: var(--t-2xs); padding: 0;
+}
+.export:hover { color: var(--accent-hover); text-decoration: underline; }
+
+.groups { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 12px; }
+.empty { color: var(--text-faint); font-size: var(--t-xs); padding: 12px 4px; line-height: 1.5; }
+
+.group { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.groupHead {
+  font-family: var(--font-mono); font-size: var(--t-2xs); font-weight: 600; letter-spacing: .08em;
+  color: var(--text-muted); display: flex; gap: 8px; align-items: baseline;
+  border-bottom: 1px dashed var(--border-2); padding-bottom: 3px; margin-bottom: 2px;
+}
+.h_pass { color: var(--ok); }
+.h_fail { color: var(--red); }
+.h_running { color: var(--warn); }
+.groupLabel { color: var(--text-faint); font-weight: 400; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.row { display: flex; gap: 7px; align-items: baseline; min-width: 0; border-left: 2px solid var(--border-2); padding-left: 7px; }
+.tag { font-family: var(--font-mono); font-size: 9px; font-weight: 600; border-radius: 3px; padding: 0 4px; flex: 0 0 auto; }
+.vj { color: var(--ch-vj); background: color-mix(in srgb, var(--ch-vj) 14%, transparent); }
+.pole { color: var(--ch-pole); background: color-mix(in srgb, var(--ch-pole) 14%, transparent); }
+.scanner { color: var(--ch-scanner); background: color-mix(in srgb, var(--ch-scanner) 14%, transparent); }
+.text {
+  font-family: var(--font-mono); font-size: var(--t-2xs); color: var(--text-muted);
+  white-space: pre-wrap; word-break: break-all; min-width: 0; line-height: 1.45;
+}
+.waiting { font-family: var(--font-mono); font-size: var(--t-2xs); color: var(--warn); padding-left: 9px; }

@@ -28,12 +28,30 @@ import {
   type AdTriggersCompleters,
   type AdManifestEntry,
 } from '../../core/adTriggers';
+import { assertNever } from '../../core/assertNever';
+import type { ScenarioAction } from '../../core/scenario';
+import type { ObservedLine } from '../../core/scenarioEngine';
 
 export interface LogEntry {
   id: number;
   channel: WireMessage['channel'] | 'sys';
   text: string;
   at: string;
+}
+
+/** A bench action that was performed, with the wire it emitted (recorder feed). */
+export interface EmulatorActionEvent {
+  action: ScenarioAction;
+  lines: ObservedLine[];
+  at: number;
+}
+
+/** A player inject that was rung up, with the wire the auto-ring emitted. */
+export interface EmulatorInjectEvent {
+  barcode: string;
+  quantity: number;
+  lines: ObservedLine[];
+  at: number;
 }
 
 export type PricebookItem = QuickKeyItem;
@@ -95,6 +113,14 @@ export function useEmulator(): {
   loyalty: (cardNumber: string) => void;
   tender: (kind: TenderKind, amountCents?: number) => void;
   voidTicket: () => void;
+  /** Perform any bench action through one funnel; returns the wire it emitted. */
+  performAction: (action: ScenarioAction) => ObservedLine[];
+  /** Live basket snapshot straight off the session (not the React state copy). */
+  getSnapshot: () => SessionSnapshot;
+  /** Subscribe to performed actions (scenario recorder feed). */
+  onAction: (cb: (ev: EmulatorActionEvent) => void) => () => void;
+  /** Subscribe to player injects after they are rung up (scenario wait steps). */
+  onInjectEvent: (cb: (ev: EmulatorInjectEvent) => void) => () => void;
 } {
   const [config, setConfig] = useState<PosConfig>(DEFAULT_POS_CONFIG);
 
@@ -337,6 +363,85 @@ export function useEmulator(): {
     [session, logSys],
   );
 
+  // Scenario-mode taps: every bench action and every player inject flows past
+  // these subscriber sets so the recorder and runner can observe the session
+  // without owning it.
+  const actionSubsRef = useRef(new Set<(ev: EmulatorActionEvent) => void>());
+  const injectSubsRef = useRef(new Set<(ev: EmulatorInjectEvent) => void>());
+
+  /**
+   * One funnel for every bench action — manual buttons, quick keys and
+   * scenario steps all resolve + dispatch here, so a recorded action replays
+   * through exactly the code path the manual click took.
+   */
+  const performAction = useCallback(
+    (action: ScenarioAction): ObservedLine[] => {
+      const resolve = (code: string): PricebookItem | undefined =>
+        pricebookIndex.get(code) ?? quickKeys.find((p) => p.code === code);
+      const messages = ((): WireMessage[] => {
+        switch (action.kind) {
+          case 'ring': {
+            const hit = resolve(action.code);
+            return session.addItem({
+              code: action.code,
+              description: action.description?.trim() || hit?.description || `UPC ${action.code}`,
+              priceCents: action.priceCents ?? hit?.priceCents ?? 100,
+              quantity: action.quantity,
+            });
+          }
+          case 'scan': {
+            // Legacy parity: the Radiant6 emulator family (Canada inherits the
+            // US class) turns loyalty-prefixed scans into a 1024 sign-in. Topaz
+            // has no such intercept — its loyalty is the explicit LOYALTY action.
+            const loyaltyCard =
+              config.registerType === 'radiant6-us' || config.registerType === 'radiant6-canada'
+                ? loyaltyCardFromScan(action.code)
+                : null;
+            if (loyaltyCard) return session.loyalty(loyaltyCard);
+            const hit = resolve(action.code);
+            return session.addItem(
+              hit
+                ? { code: hit.code, description: hit.description, priceCents: hit.priceCents }
+                : { code: action.code, description: action.description?.trim() || `UPC ${action.code}`, priceCents: 100 },
+            );
+          }
+          case 'loyalty':
+            return session.loyalty(action.card);
+          case 'voidLine':
+            return session.voidLine(action.lineNumber);
+          case 'setQuantity':
+            return session.setQuantity(action.lineNumber, action.quantity);
+          case 'setPrice':
+            return session.setPrice(action.lineNumber, action.priceCents);
+          case 'tender':
+            return session.tender(action.tender, action.amountCents);
+          case 'voidTicket':
+            return session.voidTicket();
+          default:
+            return assertNever(action);
+        }
+      })();
+      dispatch(messages);
+      const lines: ObservedLine[] = messages.map((m) => ({ channel: m.channel, text: m.data }));
+      const event: EmulatorActionEvent = { action, lines, at: Date.now() };
+      for (const cb of [...actionSubsRef.current]) cb(event);
+      return lines;
+    },
+    [session, dispatch, config.registerType, pricebookIndex, quickKeys],
+  );
+
+  const getSnapshot = useCallback((): SessionSnapshot => session.snapshot(), [session]);
+
+  const onAction = useCallback((cb: (ev: EmulatorActionEvent) => void): (() => void) => {
+    actionSubsRef.current.add(cb);
+    return () => actionSubsRef.current.delete(cb);
+  }, []);
+
+  const onInjectEvent = useCallback((cb: (ev: EmulatorInjectEvent) => void): (() => void) => {
+    injectSubsRef.current.add(cb);
+    return () => injectSubsRef.current.delete(cb);
+  }, []);
+
   // Ring up completer injects pushed by the player over the VJ reverse channel:
   // resolve the UPC (pricebook → quick keys → fallback) and add it to the basket,
   // which emits the normal 1011 + pole back so the player's basket reflects it.
@@ -354,12 +459,24 @@ export function useEmulator(): {
           ].slice(0, 300),
         );
       }
+      const notifyInject = (messages: WireMessage[]): void => {
+        const wire: ObservedLine[] = [
+          ...(isUsRegisterType(config.registerType)
+            ? [{ channel: 'scanner' as const, text: `← ${cmd.barcode}` }]
+            : []),
+          ...messages.map((m) => ({ channel: m.channel, text: m.data })),
+        ];
+        const event: EmulatorInjectEvent = { barcode: cmd.barcode, quantity: cmd.quantity, lines: wire, at: Date.now() };
+        for (const cb of [...injectSubsRef.current]) cb(event);
+      };
       // Legacy Radiant6RegisterEmulator parity: loyalty-prefixed scans
       // (D7826/D8018/8018…) route to an EventId 1024 sign-in, not an item ring.
       const loyaltyCard = config.registerType === 'radiant6-us' ? loyaltyCardFromScan(cmd.barcode) : null;
       if (loyaltyCard) {
         logSys(`Loyalty scan inject: ${cmd.barcode} → 1024 card ${loyaltyCard}`);
-        dispatch(session.loyalty(loyaltyCard));
+        const messages = session.loyalty(loyaltyCard);
+        dispatch(messages);
+        notifyInject(messages);
         return;
       }
       const hit = pricebookIndex.get(cmd.barcode) ?? quickKeys.find((p) => p.code === cmd.barcode);
@@ -367,7 +484,9 @@ export function useEmulator(): {
         ? { code: hit.code, description: hit.description, priceCents: hit.priceCents, quantity: cmd.quantity }
         : { code: cmd.barcode, description: `UPC ${cmd.barcode}`, priceCents: 100, quantity: cmd.quantity };
       logSys(`Completer inject: ${cmd.barcode} ×${cmd.quantity} → ${item.description}`);
-      dispatch(session.addItem(item));
+      const messages = session.addItem(item);
+      dispatch(messages);
+      notifyInject(messages);
       setInjectSeq((n) => n + 1);
     });
   }, [pricebookIndex, quickKeys, session, dispatch, logSys, config.registerType]);
@@ -474,15 +593,15 @@ export function useEmulator(): {
       quickKeys,
       quickKeyFiles,
       quickKeyColorFor,
-      fireQuickKey: (entry: QuickKeyEntry) =>
-        dispatch(
-          session.addItem({
-            code: entry.upc,
-            description: entry.description,
-            priceCents: entry.priceCents,
-            quantity: entry.quantity,
-          }),
-        ),
+      fireQuickKey: (entry: QuickKeyEntry) => {
+        performAction({
+          kind: 'ring',
+          code: entry.upc,
+          description: entry.description,
+          priceCents: entry.priceCents,
+          quantity: entry.quantity,
+        });
+      },
       reloadQuickKeys: loadQuickKeys,
       adManifest,
       adDetails,
@@ -493,38 +612,43 @@ export function useEmulator(): {
       setPricebookDir,
       pricebookStatus,
       loadPricebook,
-      addItem: (item: PricebookItem) => dispatch(session.addItem(item)),
-      addCustom: (input: { code: string; description: string; priceCents: number; quantity: number }) =>
-        dispatch(session.addItem(input)),
-      scan: (code: string, description?: string) => {
-        // Legacy parity: the Radiant6 emulator family (Canada inherits the US
-        // class) turns loyalty-prefixed scans into a 1024 sign-in. Topaz has
-        // no such intercept — its loyalty is the explicit LOYALTY action.
-        const loyaltyCard =
-          config.registerType === 'radiant6-us' || config.registerType === 'radiant6-canada'
-            ? loyaltyCardFromScan(code)
-            : null;
-        if (loyaltyCard) {
-          dispatch(session.loyalty(loyaltyCard));
-          return;
-        }
-        const hit = pricebookIndex.get(code) ?? quickKeys.find((p) => p.code === code);
-        dispatch(
-          session.addItem(
-            hit
-              ? { code: hit.code, description: hit.description, priceCents: hit.priceCents }
-              : { code, description: description?.trim() || `UPC ${code}`, priceCents: 100 },
-          ),
-        );
+      addItem: (item: PricebookItem) => {
+        performAction({ kind: 'ring', code: item.code, description: item.description, priceCents: item.priceCents });
       },
-      voidLine: (lineNumber: number) => dispatch(session.voidLine(lineNumber)),
-      setQuantity: (lineNumber: number, qty: number) => dispatch(session.setQuantity(lineNumber, qty)),
-      setPrice: (lineNumber: number, priceCents: number) => dispatch(session.setPrice(lineNumber, priceCents)),
-      loyalty: (cardNumber: string) => dispatch(session.loyalty(cardNumber)),
-      tender: (kind: TenderKind, amountCents?: number) => dispatch(session.tender(kind, amountCents)),
-      voidTicket: () => dispatch(session.voidTicket()),
+      addCustom: (input: { code: string; description: string; priceCents: number; quantity: number }) => {
+        performAction({ kind: 'ring', ...input });
+      },
+      scan: (code: string, description?: string) => {
+        performAction({ kind: 'scan', code, description });
+      },
+      voidLine: (lineNumber: number) => {
+        performAction({ kind: 'voidLine', lineNumber });
+      },
+      setQuantity: (lineNumber: number, qty: number) => {
+        performAction({ kind: 'setQuantity', lineNumber, quantity: qty });
+      },
+      setPrice: (lineNumber: number, priceCents: number) => {
+        performAction({ kind: 'setPrice', lineNumber, priceCents });
+      },
+      loyalty: (cardNumber: string) => {
+        performAction({ kind: 'loyalty', card: cardNumber });
+      },
+      tender: (kind: TenderKind, amountCents?: number) => {
+        performAction({ kind: 'tender', tender: kind, amountCents });
+      },
+      voidTicket: () => {
+        performAction({ kind: 'voidTicket' });
+      },
+      performAction,
+      getSnapshot,
+      onAction,
+      onInjectEvent,
     }),
     [
+      performAction,
+      getSnapshot,
+      onAction,
+      onInjectEvent,
       snapshot,
       injectSeq,
       status,

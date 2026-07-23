@@ -54,6 +54,10 @@ describe('register types & ports', () => {
     expect(portsForRegisterType('radiant6-us')).toEqual({ vjPort: 5438, polePort: 5439, scannerPort: 10000 });
   });
 
+  it('maps Verifone Topaz to the serial-over-TCP dev ports (scanner 10000 / pole 10001 / VJ 10002)', () => {
+    expect(portsForRegisterType('verifone')).toEqual({ vjPort: 10002, polePort: 10001, scannerPort: 10000 });
+  });
+
   it('lists the register types with labels', () => {
     expect(REGISTER_TYPES.map((r) => r.value)).toEqual(['radiant6-canada', 'bulloch', 'radiant6-us', 'verifone']);
     expect(REGISTER_TYPES.find((r) => r.value === 'bulloch')?.label).toBe('Bulloch');
@@ -75,3 +79,4 @@ describe('register types & ports', () => {
     expect(isUsRegisterType('bulloch')).toBe(false);
   });
 });
+

@@ -1,0 +1,27 @@
+.controls { display: flex; align-items: center; gap: 6px; }
+
+.run {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--ok-quiet); border: 1px solid var(--ok); color: var(--ok);
+  border-radius: var(--r-sm); padding: 4px 11px; font-size: var(--t-xs); font-weight: 600; cursor: pointer;
+}
+.run:hover:not(:disabled) { color: var(--ok-hover); border-color: var(--ok-hover); }
+.run:disabled { opacity: .4; cursor: default; }
+
+.step, .stop {
+  background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text-muted);
+  border-radius: var(--r-sm); padding: 4px 10px; font-size: var(--t-xs); font-weight: 500; cursor: pointer;
+}
+.step:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.step:disabled { opacity: .4; cursor: default; }
+.stop { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, transparent); background: var(--red-quiet); }
+.stop:hover { color: var(--red-hover); }
+
+.speed {
+  background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text-muted);
+  border-radius: var(--r-sm); padding: 3px 6px; font-size: var(--t-xs); cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  .speed { display: none; }
+}

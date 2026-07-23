@@ -1,0 +1,56 @@
+/* Always-visible log dock (mock bg #0b0e13). Fixed heights so the
+   expand/collapse animates; expanded ≈ 60% of the window. */
+.dock {
+  background: #0b0e13; border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+  height: 118px; transition: height var(--dur) var(--ease);
+}
+.dock.open { height: 60vh; }
+
+.bar { display: flex; align-items: center; gap: var(--s2); padding: 6px 14px 4px; flex: 0 0 auto; flex-wrap: wrap; }
+.label { font-size: var(--t-2xs); font-weight: 600; letter-spacing: .14em; color: var(--text-faint); white-space: nowrap; }
+
+.filters { display: inline-flex; gap: 2px; }
+.filter, .filterOn {
+  display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent;
+  color: var(--text-faint); border-radius: var(--r-sm); padding: 2px 7px;
+  font-size: var(--t-2xs); font-weight: 500; cursor: pointer;
+}
+.filterOn { background: var(--surface-2); color: var(--text); }
+.filter:hover { color: var(--text); }
+.count { font-size: 9px; font-family: var(--font-mono); color: var(--text-faint); background: var(--bg); border-radius: var(--r-pill); padding: 0 5px; }
+.filterOn .count { color: var(--accent); }
+
+.search { display: inline-flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--r-sm); padding: 3px 8px; color: var(--text-faint); }
+.search input { background: none; border: 0; outline: none; color: var(--text); font-size: var(--t-xs); width: 100px; }
+.tool, .toolOn { display: grid; place-items: center; width: 24px; height: 24px; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--r-sm); color: var(--text-muted); cursor: pointer; }
+.tool:hover { color: var(--text); border-color: var(--accent); }
+.toolOn { color: var(--accent); border-color: var(--accent); background: var(--accent-quiet); }
+
+.spacer { flex: 1 1 auto; }
+.events { font-size: var(--t-2xs); color: var(--text-faint); font-family: var(--font-mono); white-space: nowrap; }
+.expand { border: 0; background: transparent; color: var(--accent); font-size: var(--t-2xs); cursor: pointer; padding: 2px 0; white-space: nowrap; }
+.expand:hover { color: var(--accent-hover); }
+
+/* Collapsed tail: the last few lines, click anywhere to expand. */
+.tail {
+  display: flex; flex-direction: column; gap: 3px; padding: 0 14px 8px; border: 0;
+  background: transparent; cursor: pointer; text-align: left; overflow: hidden; flex: 1 1 auto; min-height: 0;
+}
+.tail:hover { background: color-mix(in srgb, var(--surface) 45%, transparent); }
+
+.row { display: flex; gap: 8px; align-items: baseline; font-family: var(--font-mono); font-size: var(--t-xs); min-width: 0; }
+.time { color: var(--text-faint); font-size: var(--t-2xs); flex: 0 0 auto; }
+.tag { font-size: 9px; font-weight: 600; letter-spacing: .06em; padding: 0 6px; border-radius: 4px; flex: 0 0 auto; color: #06121f; }
+.vj { background: var(--ch-vj); }
+.pole { background: var(--ch-pole); color: #231603; }
+.scanner { background: var(--ch-scanner); color: #06210f; }
+.sys { background: var(--ch-sys); color: #0c0f14; }
+.text { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.empty { color: var(--text-faint); font-size: var(--t-xs); font-family: var(--font-ui); }
+
+/* Expanded lines: bottom-anchored terminal scroll. */
+.lines { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--s2) 14px; }
+.lines .row { padding: 3px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+.textFull { color: var(--text); white-space: pre-wrap; word-break: break-all; }
+.emptyBig { color: var(--text-faint); font-size: var(--t-sm); padding: 26px 4px; text-align: center; }

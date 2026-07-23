@@ -1,31 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { LogEntry } from '../useEmulator';
-
-export type UiMode = 'control' | 'split' | 'logs';
-const MODE_KEY = 'r6ca.uiMode';
-
-/** Layout mode (Control / Split / Logs), persisted across launches. */
-export function useUiMode(): [UiMode, (m: UiMode) => void] {
-  const [mode, setMode] = useState<UiMode>(() => {
-    const v = (() => {
-      try {
-        return localStorage.getItem(MODE_KEY);
-      } catch {
-        return null;
-      }
-    })();
-    return v === 'control' || v === 'split' || v === 'logs' ? v : 'control';
-  });
-  const set = useCallback((m: UiMode) => {
-    setMode(m);
-    try {
-      localStorage.setItem(MODE_KEY, m);
-    } catch {
-      // ignore storage failures
-    }
-  }, []);
-  return [mode, set];
-}
 
 export type ChannelFilter = 'all' | 'vj' | 'pole' | 'scanner' | 'sys';
 

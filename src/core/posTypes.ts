@@ -23,7 +23,9 @@ export function isUsRegisterType(type: RegisterType): boolean {
  * `debug1.properties`: "Bulloch typically listens on TCP 5440"). Radiant6 US
  * has no pole display — VJ 5438 plus the scanner reverse channel on 10000
  * (legacy `scanner.ioParams=TCP:10000`), where the player writes completer
- * barcode injects.
+ * barcode injects. Verifone Topaz is serial on real hardware; local dev uses
+ * the legacy serial-over-TCP dev ports (player `system.properties`:
+ * scanner=TCP:10000, poledisplay=TCP:10001, virtualjournal=TCP:10002).
  */
 export const REGISTER_TYPES: ReadonlyArray<{
   value: RegisterType;
@@ -35,7 +37,7 @@ export const REGISTER_TYPES: ReadonlyArray<{
   { value: 'radiant6-canada', label: 'Radiant6 Canada', vjPort: 5438, polePort: 5439, scannerPort: 10000 },
   { value: 'bulloch', label: 'Bulloch', vjPort: 5438, polePort: 5440, scannerPort: 10000 },
   { value: 'radiant6-us', label: 'Radiant6 US', vjPort: 5438, polePort: 5439, scannerPort: 10000 },
-  { value: 'verifone', label: 'Verifone Topaz', vjPort: 5438, polePort: 5439, scannerPort: 10000 },
+  { value: 'verifone', label: 'Verifone Topaz', vjPort: 10002, polePort: 10001, scannerPort: 10000 },
 ];
 
 /** Look up the VJ/pole/scanner ports for a register type. */

@@ -1,0 +1,125 @@
+/* Scrolls when compressed (expanded log dock / tiny window) so the basket
+   totals and tender row never clip. */
+.wrap { background: var(--bg); padding: 14px; display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; overflow-y: auto; position: relative; }
+
+/* ── Scan-anything ─────────────────────────────────────────────── */
+.scanwrap { position: relative; flex: 0 0 auto; }
+.scan {
+  width: 100%; background: var(--surface); border: 1px solid var(--border-2); color: var(--text);
+  border-radius: 7px; padding: 9px 12px; font-size: var(--t-sm); font-family: var(--font-mono);
+}
+.scan::placeholder { color: var(--text-faint); }
+.suggest {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30;
+  background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--r-md);
+  box-shadow: var(--sh-2); overflow: hidden; display: flex; flex-direction: column;
+}
+.suggestRow {
+  display: flex; align-items: baseline; gap: 8px; padding: 7px 11px; border: 0; background: transparent;
+  color: var(--text-muted); font-size: var(--t-xs); cursor: pointer; text-align: left; min-width: 0;
+}
+.suggestOn { background: var(--surface-3); color: var(--text); }
+.suggestDesc { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggestTag { font-size: 9px; font-weight: 600; color: var(--ok); border: 1px solid color-mix(in srgb, var(--ok) 45%, transparent); background: var(--ok-quiet); border-radius: 3px; padding: 0 5px; flex: 0 0 auto; }
+.suggestCode { font-family: var(--font-mono); font-size: var(--t-2xs); color: var(--text-faint); flex: 0 0 auto; }
+.suggestPrice { font-family: var(--font-mono); color: var(--accent); flex: 0 0 auto; }
+
+/* ── Item chips ────────────────────────────────────────────────── */
+.chips { display: flex; gap: 5px; flex-wrap: wrap; flex: 0 0 auto; }
+.itemChip {
+  background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text-muted);
+  border-radius: 6px; padding: 5px 9px; font-size: var(--t-xs); cursor: pointer;
+  display: inline-flex; gap: 6px; align-items: baseline; white-space: nowrap; min-width: 0;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.itemChip:hover { border-color: var(--accent); color: var(--text); }
+.chipDesc { overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+.chipPrice { font-family: var(--font-mono); color: var(--accent); }
+.chipAd { border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: var(--ok-quiet); }
+.chipAd .chipPrice { color: var(--ok); }
+.chipGrey { opacity: .55; }
+.moreChip {
+  background: transparent; border: 1px dashed var(--border-2); color: var(--text-faint);
+  border-radius: 6px; padding: 5px 9px; font-size: var(--t-xs); cursor: pointer;
+}
+.moreChip:hover { color: var(--text); border-color: var(--accent); }
+
+/* ── All-items popover ─────────────────────────────────────────── */
+.backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, .35); }
+.popover {
+  position: absolute; top: 44px; left: 14px; right: 14px; bottom: 14px; z-index: 41;
+  background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--r-md);
+  box-shadow: var(--sh-2); display: flex; flex-direction: column; overflow: hidden;
+  animation: ce-pop var(--dur) var(--ease);
+}
+.popSearch {
+  margin: 10px; background: var(--bg); border: 1px solid var(--border-2); color: var(--text);
+  border-radius: var(--r-sm); padding: 7px 10px; font-size: var(--t-sm); flex: 0 0 auto;
+}
+.popList { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 0 6px 6px; }
+.popRow {
+  display: flex; align-items: baseline; gap: 8px; padding: 7px 8px; border: 0; background: transparent;
+  color: var(--text-muted); font-size: var(--t-xs); cursor: pointer; text-align: left; border-radius: var(--r-sm); min-width: 0;
+}
+.popRow:hover { background: var(--surface-3); color: var(--text); }
+.popAd { color: var(--ok); }
+.popDesc { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popCode { font-family: var(--font-mono); font-size: var(--t-2xs); color: var(--text-faint); flex: 0 0 auto; }
+.popPrice { font-family: var(--font-mono); color: var(--accent); flex: 0 0 auto; }
+
+/* ── Basket ────────────────────────────────────────────────────── */
+.basket {
+  flex: 1 1 auto; min-height: 168px; border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); display: flex; flex-direction: column; overflow: hidden;
+}
+.lines { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.empty { color: var(--text-faint); font-size: var(--t-sm); text-align: center; padding: 26px 10px; }
+.line { position: relative; display: flex; align-items: baseline; gap: 8px; padding: 8px 11px; border-bottom: 1px solid #20242e; font-size: var(--t-sm); min-width: 0; }
+.voided { opacity: .45; }
+.voided .desc { text-decoration: line-through; }
+.num { color: var(--text-faint); font-family: var(--font-mono); width: 14px; flex: 0 0 auto; }
+.desc { flex: 1 1 auto; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qty { color: var(--text-muted); font-family: var(--font-mono); flex: 0 0 auto; }
+.ext { color: var(--text); font-family: var(--font-mono); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+.lineactions {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  display: none; gap: 4px; background: var(--surface-2); border: 1px solid var(--border-2);
+  border-radius: var(--r-sm); padding: 2px 4px;
+}
+.line:hover .lineactions { display: inline-flex; }
+.lineactions button {
+  border: 0; background: transparent; color: var(--text-muted); font-size: var(--t-2xs);
+  cursor: pointer; padding: 2px 5px; border-radius: 3px;
+}
+.lineactions button:hover { color: var(--text); background: var(--surface-3); }
+.voidBtn { color: var(--red) !important; }
+
+.totals { flex: 0 0 auto; padding: 10px 11px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px; }
+.trow { display: flex; justify-content: space-between; font-size: var(--t-xs); color: var(--text-muted); }
+.tval { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.grand { display: flex; justify-content: space-between; align-items: baseline; }
+.grand span { font-size: var(--t-xs); letter-spacing: .1em; color: var(--text-muted); }
+.gval { font-size: 26px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 500; }
+
+/* ── Loyalty + tender ──────────────────────────────────────────── */
+.loyalty { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; flex: 0 0 auto; }
+.loyalty button {
+  display: flex; flex-direction: column; align-items: center; gap: 1px; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border-2); color: var(--text-muted);
+  border-radius: var(--r-md); padding: 7px 4px; font-size: var(--t-xs); font-weight: 500;
+}
+.loyalty button:hover { color: var(--text); border-color: var(--accent); }
+.loyalty small { font-size: 9px; color: var(--text-faint); }
+
+.tender { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; flex: 0 0 auto; }
+.pay {
+  background: var(--ok); color: #06210f; border: 0; border-radius: var(--r-md);
+  padding: 11px 6px; font-size: var(--t-base); font-weight: 600; cursor: pointer;
+}
+.pay:hover { background: var(--ok-hover); }
+.voidTicket {
+  background: var(--red-quiet); color: var(--red); border: 1px solid rgba(223, 74, 82, .45);
+  border-radius: var(--r-md); padding: 11px 6px; font-size: var(--t-sm); font-weight: 600; cursor: pointer;
+}
+.voidTicket:hover { background: rgba(223, 74, 82, .22); }
+.pay:disabled, .voidTicket:disabled { opacity: .4; cursor: default; }
