@@ -2,10 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RegisterSession, type WireMessage, type SessionSnapshot, type TenderKind } from '../../core/RegisterSession';
 import {
   DEFAULT_POS_CONFIG,
+  DEFAULT_LOL_PRESET,
   DEFAULT_PLAYER_CONFIG,
   normalizePlayerConfig,
+  normalizePosConfig,
+  normalizeLolPreset,
+  lolConfigForLane,
   channelsForRegisterType,
   isUsRegisterType,
+  type LolPreset,
   type PosConfig,
   type PlayerConfig,
   type RegisterType,
@@ -69,6 +74,8 @@ export const PRICEBOOK: PricebookItem[] = [
 const idleStatus: Status = { vj: 'disconnected', pole: 'disconnected', scanner: 'disconnected' };
 const PLAYER_CFG_KEY = 'r6ca.playerConfig';
 const PRICEBOOK_DIR_KEY = 'r6ca.pricebookDir';
+const POS_CFG_KEY = 'r6ca.posConfig';
+const LOL_PRESET_KEY = 'r6ca.lolPreset';
 // Empty = use the sample pricebook bundled with this repo (resolved in the main
 // process). Paste a folder to override (e.g. a local liftck_player checkout with
 // real `<playerCode>-<timestamp>.xml` exports).
@@ -80,6 +87,10 @@ export function useEmulator(): {
   status: Status;
   config: PosConfig;
   setConfig: (c: PosConfig) => void;
+  /** Lift-on-Linux lane preset state (persisted). */
+  lol: LolPreset;
+  /** Update the LoL preset; enabling (or changing lane) re-stamps the connection config. */
+  setLolPreset: (p: LolPreset) => void;
   playerConfig: PlayerConfig;
   setPlayerConfig: (c: PlayerConfig) => void;
   registerPlayer: () => Promise<void>;
@@ -122,7 +133,35 @@ export function useEmulator(): {
   /** Subscribe to player injects after they are rung up (scenario wait steps). */
   onInjectEvent: (cb: (ev: EmulatorInjectEvent) => void) => () => void;
 } {
-  const [config, setConfig] = useState<PosConfig>(DEFAULT_POS_CONFIG);
+  // Connection target survives restarts (host + ports + register type).
+  const [config, setConfig] = useState<PosConfig>(() => {
+    try {
+      return normalizePosConfig(JSON.parse(localStorage.getItem(POS_CFG_KEY) ?? 'null'));
+    } catch {
+      return DEFAULT_POS_CONFIG;
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem(POS_CFG_KEY, JSON.stringify(config));
+  }, [config]);
+
+  // Lift-on-Linux lane preset. Enabling it (or picking a lane while enabled)
+  // stamps the whole connection target — host, register type, offset ports —
+  // from `lolConfigForLane`; the fields stay editable afterwards, so a manual
+  // tweak simply diverges from the preset without fighting it.
+  const [lol, setLolState] = useState<LolPreset>(() => {
+    try {
+      return normalizeLolPreset(JSON.parse(localStorage.getItem(LOL_PRESET_KEY) ?? 'null'));
+    } catch {
+      return DEFAULT_LOL_PRESET;
+    }
+  });
+  const setLolPreset = useCallback((next: LolPreset) => {
+    const normalized = normalizeLolPreset(next);
+    localStorage.setItem(LOL_PRESET_KEY, JSON.stringify(normalized));
+    setLolState(normalized);
+    if (normalized.enabled) setConfig(lolConfigForLane(normalized.lane));
+  }, []);
 
   // One session per lane. Rebuilt when the register type changes so the wire
   // protocol matches (Radiant6 Canada = VJ + pole, Bulloch = pole-only). The
@@ -580,6 +619,8 @@ export function useEmulator(): {
       status,
       config,
       setConfig,
+      lol,
+      setLolPreset,
       playerConfig,
       setPlayerConfig,
       registerPlayer,
@@ -653,6 +694,8 @@ export function useEmulator(): {
       injectSeq,
       status,
       config,
+      lol,
+      setLolPreset,
       playerConfig,
       setPlayerConfig,
       log,

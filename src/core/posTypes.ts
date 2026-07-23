@@ -81,6 +81,69 @@ export const DEFAULT_POS_CONFIG: PosConfig = {
   registerType: 'radiant6-canada',
 };
 
+/** Apply defaults + per-field validation to a persisted POS config (e.g. from localStorage). */
+export function normalizePosConfig(partial: Partial<PosConfig> | null | undefined): PosConfig {
+  const port = (v: number | undefined, fallback: number): number =>
+    typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 65535 ? v : fallback;
+  const host = (partial?.host ?? '').trim();
+  const registerType = REGISTER_TYPES.some((r) => r.value === partial?.registerType)
+    ? (partial!.registerType as RegisterType)
+    : DEFAULT_POS_CONFIG.registerType;
+  return {
+    host: host || DEFAULT_POS_CONFIG.host,
+    vjPort: port(partial?.vjPort, DEFAULT_POS_CONFIG.vjPort),
+    polePort: port(partial?.polePort, DEFAULT_POS_CONFIG.polePort),
+    scannerPort: port(partial?.scannerPort, DEFAULT_POS_CONFIG.scannerPort),
+    registerType,
+  };
+}
+
+/**
+ * Lift-on-Linux lane lab — the Proxmox LXC that runs the legacy player, one
+ * lane per Linux user. The lanes are Radiant6 US registers. Port scheme:
+ * every lane's system.properties says `virtualjournal.ioParams=TCP:5438` and
+ * the player itself offsets the listener by lane-1 (Zynstra `TCPDevice.java`);
+ * the scanner port does NOT auto-offset, so the lab convention assigns
+ * 10000 + (lane-1)*10 in each lane's system.properties.
+ */
+export const LOL_HOST = '10.1.2.167';
+export const LOL_LANE_MIN = 1;
+export const LOL_LANE_MAX = 6;
+
+/** Persisted LoL preset state: whether the preset drives the config, and which lane. */
+export interface LolPreset {
+  enabled: boolean;
+  lane: number;
+}
+
+export const DEFAULT_LOL_PRESET: LolPreset = { enabled: false, lane: 1 };
+
+/** Clamp a lane to a valid integer in 1..6; anything unparseable becomes lane 1. */
+export function normalizeLolLane(lane: number | undefined): number {
+  if (typeof lane !== 'number' || !Number.isInteger(lane)) return LOL_LANE_MIN;
+  return Math.min(LOL_LANE_MAX, Math.max(LOL_LANE_MIN, lane));
+}
+
+/** Apply defaults + validation to a persisted LoL preset. */
+export function normalizeLolPreset(partial: Partial<LolPreset> | null | undefined): LolPreset {
+  return {
+    enabled: partial?.enabled === true,
+    lane: normalizeLolLane(partial?.lane),
+  };
+}
+
+/** The full connection target for a LoL lane — host, ports, and register type. */
+export function lolConfigForLane(lane: number): PosConfig {
+  const n = normalizeLolLane(lane);
+  return {
+    host: LOL_HOST,
+    registerType: 'radiant6-us',
+    vjPort: 5438 + (n - 1),
+    polePort: portsForRegisterType('radiant6-us').polePort,
+    scannerPort: 10000 + (n - 1) * 10,
+  };
+}
+
 /**
  * Player identity / backend credentials — mirrors CKPlayer2.0's
  * `player.code` / `player.key` settings. Editable at runtime in the emulator

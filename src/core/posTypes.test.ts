@@ -7,6 +7,12 @@ import {
   portsForRegisterType,
   channelsForRegisterType,
   isUsRegisterType,
+  lolConfigForLane,
+  normalizeLolLane,
+  normalizeLolPreset,
+  normalizePosConfig,
+  LOL_HOST,
+  type RegisterType,
 } from './posTypes';
 
 describe('normalizePlayerConfig', () => {
@@ -80,3 +86,57 @@ describe('register types & ports', () => {
   });
 });
 
+describe('Lift-on-Linux (LoL) lane preset', () => {
+  it('lane 1 targets the LXC with the base ports', () => {
+    expect(lolConfigForLane(1)).toEqual({
+      host: LOL_HOST,
+      registerType: 'radiant6-us',
+      vjPort: 5438,
+      polePort: 5439,
+      scannerPort: 10000,
+    });
+  });
+
+  it('offsets VJ by lane-1 (Zynstra TCPDevice rule) and scanner by (lane-1)*10 (lab convention)', () => {
+    expect(lolConfigForLane(2)).toMatchObject({ vjPort: 5439, scannerPort: 10010 });
+    expect(lolConfigForLane(6)).toMatchObject({ vjPort: 5443, scannerPort: 10050 });
+  });
+
+  it('clamps out-of-range or non-integer lanes into 1..6', () => {
+    expect(normalizeLolLane(0)).toBe(1);
+    expect(normalizeLolLane(7)).toBe(6);
+    expect(normalizeLolLane(2.5)).toBe(1);
+    expect(normalizeLolLane(NaN)).toBe(1);
+    expect(normalizeLolLane(undefined)).toBe(1);
+  });
+
+  it('normalizes a persisted LoL preset with defaults', () => {
+    expect(normalizeLolPreset(null)).toEqual({ enabled: false, lane: 1 });
+    expect(normalizeLolPreset({ enabled: true, lane: 3 })).toEqual({ enabled: true, lane: 3 });
+    expect(normalizeLolPreset({ enabled: 'yes' as unknown as boolean, lane: 99 })).toEqual({ enabled: false, lane: 6 });
+  });
+});
+
+describe('normalizePosConfig (persisted connection restore)', () => {
+  it('returns defaults for null/empty input', () => {
+    expect(normalizePosConfig(null)).toEqual(DEFAULT_POS_CONFIG);
+    expect(normalizePosConfig({})).toEqual(DEFAULT_POS_CONFIG);
+  });
+
+  it('keeps a valid persisted config', () => {
+    const cfg = { host: '10.1.2.167', vjPort: 5439, polePort: 5439, scannerPort: 10010, registerType: 'radiant6-us' as const };
+    expect(normalizePosConfig(cfg)).toEqual(cfg);
+  });
+
+  it('falls back per-field on junk: bad ports, unknown register type, blank host', () => {
+    expect(
+      normalizePosConfig({
+        host: '   ',
+        vjPort: 0,
+        polePort: 70000,
+        scannerPort: 1.5 as number,
+        registerType: 'ncr-9000' as unknown as RegisterType,
+      }),
+    ).toEqual(DEFAULT_POS_CONFIG);
+  });
+});

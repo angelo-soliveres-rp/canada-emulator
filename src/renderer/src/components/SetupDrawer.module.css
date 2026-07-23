@@ -33,6 +33,19 @@
 .ports { display: flex; gap: var(--s4); font-size: var(--t-sm); color: var(--text-muted); }
 .ports b { color: var(--text); font-family: var(--font-mono); }
 
+.lolRow { display: flex; align-items: center; gap: var(--s3); }
+.lolToggle { display: flex; align-items: center; gap: var(--s2); font-size: var(--t-sm); color: var(--text); cursor: pointer; }
+.lolToggle input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+.lane {
+  background: var(--bg); border: 1px solid var(--border-2); color: var(--text);
+  border-radius: var(--r-sm); padding: 6px 8px; font-size: var(--t-sm); font-family: var(--font-mono); cursor: pointer;
+}
+.lane:focus-visible { border-color: var(--accent); outline: none; }
+
+.portfields { display: flex; gap: var(--s3); }
+.portfields .field { flex: 1 1 0; min-width: 0; }
+.portfields input { width: 100%; box-sizing: border-box; }
+
 .actions { display: flex; gap: var(--s2); flex-wrap: wrap; margin-top: 2px; }
 .primary, .ghost { border: 0; border-radius: var(--r-sm); padding: 9px 16px; font-size: var(--t-sm); font-weight: 500; cursor: pointer; }
 .primary { background: var(--accent); color: #fff; }

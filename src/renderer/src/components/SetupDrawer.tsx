@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { channelsForRegisterType } from '../../../core/posTypes';
+import {
+  channelsForRegisterType,
+  lolConfigForLane,
+  LOL_HOST,
+  LOL_LANE_MAX,
+  LOL_LANE_MIN,
+} from '../../../core/posTypes';
 import type { useEmulator } from '../useEmulator';
 import { useProfiles } from '../hooks/profiles';
 import { CloseIcon } from '../icons';
@@ -175,18 +181,59 @@ export function SetupDrawer({ e, open, onClose }: { e: Emu; open: boolean; onClo
 
           <section className={styles.group}>
             <span className={styles.glabel}>Connection</span>
+            <div className={styles.lolRow}>
+              <label className={styles.lolToggle}>
+                <input
+                  type="checkbox"
+                  checked={e.lol.enabled}
+                  onChange={(ev) => e.setLolPreset({ ...e.lol, enabled: ev.target.checked })}
+                />
+                <span>Lift-on-Linux LXC</span>
+              </label>
+              {e.lol.enabled && (
+                <select
+                  className={styles.lane}
+                  value={e.lol.lane}
+                  aria-label="LoL lane"
+                  onChange={(ev) => e.setLolPreset({ enabled: true, lane: Number(ev.target.value) })}
+                >
+                  {Array.from({ length: LOL_LANE_MAX - LOL_LANE_MIN + 1 }, (_, i) => LOL_LANE_MIN + i).map((lane) => (
+                    <option key={lane} value={lane}>
+                      lane {lane}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            {e.lol.enabled && (
+              <p className={styles.hint}>
+                lane {e.lol.lane} → {LOL_HOST} · Radiant6 US · VJ :{lolConfigForLane(e.lol.lane).vjPort} · scanner :
+                {lolConfigForLane(e.lol.lane).scannerPort} — fields below stay editable
+              </p>
+            )}
             <label className={styles.field}>
               <span>host</span>
               <input value={e.config.host} spellCheck={false} onChange={(ev) => e.setConfig({ ...e.config, host: ev.target.value })} />
             </label>
-            <div className={styles.ports}>
+            <div className={styles.portfields}>
               {channelsForRegisterType(e.config.registerType).map((ch) => {
-                const ports = { vj: e.config.vjPort, pole: e.config.polePort, scanner: e.config.scannerPort };
-                const labels = { vj: 'VJ', pole: 'Pole', scanner: 'Scanner' };
+                const keys = { vj: 'vjPort', pole: 'polePort', scanner: 'scannerPort' } as const;
+                const labels = { vj: 'VJ port', pole: 'Pole port', scanner: 'Scanner port' };
+                const key = keys[ch];
                 return (
-                  <span key={ch}>
-                    {labels[ch]} <b>:{ports[ch]}</b>
-                  </span>
+                  <label key={ch} className={styles.field}>
+                    <span>{labels[ch]}</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={e.config[key]}
+                      onChange={(ev) => {
+                        const n = Number(ev.target.value);
+                        if (Number.isInteger(n) && n >= 1 && n <= 65535) e.setConfig({ ...e.config, [key]: n });
+                      }}
+                    />
+                  </label>
                 );
               })}
             </div>

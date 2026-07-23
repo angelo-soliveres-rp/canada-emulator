@@ -116,6 +116,10 @@ export function Header({
         title="Register type — sets the VJ / pole / scanner ports"
         onChange={(ev) => {
           const registerType = ev.target.value as RegisterType;
+          // A manual register-type change leaves the LoL preset behind — drop
+          // the flag so the setup drawer doesn't claim a preset that no longer
+          // matches the config.
+          if (e.lol.enabled) e.setLolPreset({ ...e.lol, enabled: false });
           e.setConfig({ ...e.config, registerType, ...portsForRegisterType(registerType) });
         }}
       >
