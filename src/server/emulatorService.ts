@@ -10,9 +10,10 @@
  * Node-only (uses `net`/`fs`/`os`/`fetch`). All Electron/host-specific paths are
  * injected via the constructor so this module never imports `electron`.
  */
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { readdir, readFile, writeFile } from 'fs/promises';
 import { networkInterfaces } from 'os';
+import { gunzipSync, inflateSync } from 'zlib';
 import { PosTransport } from './PosTransport';
 import type { Channel, Status } from './PosTransport';
 import type { PosConfig } from '../core/posTypes';
@@ -44,6 +45,17 @@ export interface EmulatorServiceConfig {
 
 type StatusListener = (s: Status) => void;
 type InjectListener = (cmd: InjectCommand) => void;
+
+/**
+ * The portal 403s the Electron User-Agent, so the pricebook fetch presents a
+ * browser one — the same workaround the real player uses.
+ */
+const PRICEBOOK_DOWNLOAD_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+/** A real pricebook runs to tens of MB, so allow a generous window. */
+const PRICEBOOK_DOWNLOAD_TIMEOUT_MS = 60_000;
+/** Refuse an absurd body rather than buffering it into memory. */
+const PRICEBOOK_MAX_BYTES = 250 * 1024 * 1024;
 
 /** First non-internal MAC address (matches the player's GlobalInit param). */
 function getMacAddress(): string {
@@ -214,11 +226,117 @@ export class EmulatorService {
 
   // Load the OCT2000 pricebook that corresponds to the player code in use:
   // Circle K names exports `<siteCode>-<timestamp>.xml`, so we pick the match.
+  /** Where a downloaded pricebook is cached — beside the persisted player.key. */
+  private pricebookCachePath(playerCode: string): string {
+    return join(dirname(this.config.playerKeyFilePath), `pricebook-${playerCode}.xml`);
+  }
+
+  /**
+   * Download the registered player's live pricebook and cache it, so the bench
+   * resolves real item names/prices instead of the bundled sample.
+   *
+   * `pricebookUrl` comes from the registered datacenter's endpoints
+   * (`pricebook.url`), and its origin must already be in the backend allow-list
+   * — the same SSRF guard the ads RPC uses, since this method is reachable from
+   * the web RPC boundary where the URL is client-supplied.
+   */
+  async downloadPricebook(req: {
+    pricebookUrl: string;
+    playerCode: string;
+    playerKey: string;
+    locationCode: string;
+  }): Promise<PricebookLoadResult> {
+    const { pricebookUrl, playerCode, playerKey, locationCode } = req;
+    const fail = (error: string): PricebookLoadResult => ({ ok: false, count: 0, entries: [], path: pricebookUrl, error });
+    if (!pricebookUrl) {
+      return { ok: false, count: 0, entries: [], path: '', error: 'No pricebook URL — register the player first.' };
+    }
+    const origin = originOf(pricebookUrl);
+    if (origin === null || !this.backendOrigins.has(origin)) {
+      return fail('Pricebook URL is not a known backend origin (register the player first).');
+    }
+    const url =
+      `${pricebookUrl}?playerCode=${encodeURIComponent(playerCode)}` +
+      `&playerKey=${encodeURIComponent(playerKey)}&locationCode=${encodeURIComponent(locationCode)}`;
+    console.log(`[Pricebook] Downloading for ${playerCode} (location=${locationCode}) <- ${pricebookUrl}`);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PRICEBOOK_DOWNLOAD_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { headers: { 'User-Agent': PRICEBOOK_DOWNLOAD_UA }, signal: controller.signal });
+      console.log(`[Pricebook]   HTTP ${res.status}`);
+      if (!res.ok) return fail(`HTTP ${res.status} from pricebook.url`);
+      const declared = Number(res.headers.get('content-length') ?? '');
+      if (Number.isFinite(declared) && declared > PRICEBOOK_MAX_BYTES) {
+        return fail(
+          `Pricebook too large (${Math.round(declared / 1e6)} MB > ${Math.round(PRICEBOOK_MAX_BYTES / 1e6)} MB cap).`,
+        );
+      }
+      const xml = await this.readPricebookBody(res, pricebookUrl);
+      const entries = parsePricebook(xml);
+      console.log(`[Pricebook]   parsed ${entries.length} items`);
+      // Cache before the empty check: a body that parses to nothing is still
+      // worth keeping on disk to diagnose the dialect.
+      try {
+        await writeFile(this.pricebookCachePath(playerCode), xml, 'utf-8');
+      } catch (writeErr) {
+        console.warn('[Pricebook] Failed to cache downloaded pricebook:', writeErr);
+      }
+      if (entries.length === 0) return fail('Downloaded pricebook parsed to 0 items (unsupported dialect?).');
+      return { ok: true, count: entries.length, entries, path: pricebookUrl };
+    } catch (err) {
+      const aborted = err instanceof Error && err.name === 'AbortError';
+      return fail(
+        aborted
+          ? `Pricebook download timed out after ${PRICEBOOK_DOWNLOAD_TIMEOUT_MS / 1000}s.`
+          : err instanceof Error
+            ? err.message
+            : String(err),
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Decode a pricebook response. The portal serves gzip unless the URL ends in
+   * `.xml` (matching the real player); fall back through raw inflate to plain
+   * text so an unexpected encoding degrades instead of throwing.
+   */
+  private async readPricebookBody(res: Response, pricebookUrl: string): Promise<string> {
+    if (pricebookUrl.toLowerCase().endsWith('.xml')) return res.text();
+    const buf = Buffer.from(await res.arrayBuffer());
+    try {
+      return gunzipSync(buf).toString('utf-8');
+    } catch {
+      try {
+        return inflateSync(buf).toString('utf-8');
+      } catch {
+        return buf.toString('utf-8');
+      }
+    }
+  }
+
   async loadPricebook(req: { dir?: string; playerCode: string }): Promise<PricebookLoadResult> {
     const { playerCode } = req;
     // No external dir → use the bundled sample, picking the first .xml as a
     // last resort since its name can't match an arbitrary player code.
     const usingBundled = (req.dir ?? '').trim() === '';
+    // A previously downloaded pricebook outranks the bundled sample, so the
+    // real catalogue survives a restart without re-downloading. An explicit
+    // dir still wins — that override is the user being deliberate.
+    if (usingBundled) {
+      const cachePath = this.pricebookCachePath(playerCode);
+      try {
+        const xml = await readFile(cachePath, 'utf-8');
+        const entries = parsePricebook(xml);
+        if (entries.length > 0) {
+          console.log(`[Pricebook] Loaded ${entries.length} items from download cache ${cachePath}`);
+          return { ok: true, count: entries.length, entries, path: cachePath };
+        }
+      } catch {
+        // No cache yet (or unreadable) — fall through to the bundled sample.
+      }
+    }
     const dir = resolvePricebookDir(req.dir, this.config.resolveResourceDir('pricebook'));
     console.log(`[Pricebook] Loading for player code "${playerCode}" from ${dir}${usingBundled ? ' (bundled)' : ''}`);
     try {

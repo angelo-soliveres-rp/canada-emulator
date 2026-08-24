@@ -141,6 +141,7 @@ export function createWebEmulator(): EmulatorBridge {
       };
     },
     loadPricebook: (req): Promise<PricebookLoadResult> => invoke<PricebookLoadResult>('loadPricebook', [req]),
+    downloadPricebook: (req): Promise<PricebookLoadResult> => invoke<PricebookLoadResult>('downloadPricebook', [req]),
     registerPlayer: (req): Promise<GlobalInitResult> => invoke<GlobalInitResult>('registerPlayer', [req]),
     loadPlayerKey: (): Promise<GlobalInitResult> => invoke<GlobalInitResult>('loadPlayerKey', []),
     loadQuickKeys: (req): Promise<QuickKeyLoadResult> => invoke<QuickKeyLoadResult>('loadQuickKeys', [req]),

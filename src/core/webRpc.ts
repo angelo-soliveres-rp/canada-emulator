@@ -17,6 +17,7 @@ export type RpcMethod =
   | 'send'
   | 'getStatus'
   | 'loadPricebook'
+  | 'downloadPricebook'
   | 'registerPlayer'
   | 'loadPlayerKey'
   | 'loadQuickKeys'

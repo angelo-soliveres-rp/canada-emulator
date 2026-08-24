@@ -122,6 +122,10 @@ export function useEmulator(): {
    */
   resolveItemName: (code: string) => string;
   loadPricebook: () => Promise<void>;
+  /** Download the registered player's live pricebook (needs registration first). */
+  downloadPricebook: () => Promise<void>;
+  /** True once a player is registered and its pricebook.url endpoint is known. */
+  canDownloadPricebook: boolean;
   addItem: (item: PricebookItem) => void;
   addCustom: (input: { code: string; description: string; priceCents: number; quantity: number }) => void;
   scan: (code: string, description?: string) => void;
@@ -622,6 +626,33 @@ export function useEmulator(): {
     );
   }, [pricebookDir, playerConfig.playerCode, logSys]);
 
+  // `pricebook.url` only exists once the player.key has been registered (or
+  // rehydrated from disk) — before that there is nothing to download from.
+  const pricebookUrl = globalInit?.endpoints?.['pricebook.url'] ?? '';
+
+  const downloadPricebook = useCallback(async () => {
+    if (!pricebookUrl) {
+      logSys('Pricebook download needs a registered player (no pricebook.url endpoint yet).');
+      return;
+    }
+    logSys(`Downloading pricebook for "${playerConfig.playerCode}"…`);
+    const result = await window.emulator.downloadPricebook({
+      pricebookUrl,
+      playerCode: playerConfig.playerCode,
+      playerKey: playerConfig.playerKey,
+      locationCode: globalInit?.locationCode ?? '',
+    });
+    setPricebookStatus(result);
+    // Keep the previously loaded catalogue on failure rather than emptying the
+    // bench — a failed download is not a reason to lose the sample.
+    if (result.ok) setPricebookEntries(result.entries);
+    logSys(
+      result.ok
+        ? `Pricebook downloaded: ${result.count} items (cached for next launch)`
+        : `Pricebook download failed: ${result.error}`,
+    );
+  }, [pricebookUrl, playerConfig.playerCode, playerConfig.playerKey, globalInit?.locationCode, logSys]);
+
   // Auto-load the pricebook once on mount so item descriptions/prices and
   // quick-key colors resolve out-of-the-box from the bundled sample.
   const pricebookLoadedRef = useRef(false);
@@ -710,6 +741,8 @@ export function useEmulator(): {
       pricebookStatus,
       resolveItemName,
       loadPricebook,
+      downloadPricebook,
+      canDownloadPricebook: pricebookUrl !== '',
       addItem: (item: PricebookItem) => {
         performAction({ kind: 'ring', code: item.code, description: item.description, priceCents: item.priceCents });
       },
@@ -787,6 +820,7 @@ export function useEmulator(): {
       pricebookStatus,
       resolveItemName,
       loadPricebook,
+      downloadPricebook,
       pricebookIndex,
       registerPlayer,
       globalInit,

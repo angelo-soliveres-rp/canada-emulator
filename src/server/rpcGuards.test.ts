@@ -10,6 +10,7 @@ import {
   parseQuickKeysArgs,
   parseRegisterPlayerArgs,
   parseAdsArgs,
+  parsePricebookDownloadArgs,
   parseAdDetailArgs,
   isLoopbackHost,
   tokenEquals,
@@ -122,6 +123,28 @@ describe('request-shaped parsers', () => {
     );
     expect(parseAdDetailArgs([{ ...good, id: 'ad-1' }], origins).id).toBe('ad-1');
     expect(() => parseAdDetailArgs([{ ...good }], origins)).toThrow(RpcArgError);
+  });
+
+  it('parsePricebookDownloadArgs holds the pricebook URL to the same origin allow-list', () => {
+    const origins = new Set(['https://player.example.com']);
+    const good = {
+      pricebookUrl: 'https://player.example.com/api/lift/us/pricebook',
+      playerCode: 'us-1',
+      playerKey: 'k',
+      locationCode: '1',
+    };
+    expect(parsePricebookDownloadArgs([good], origins).pricebookUrl).toBe(good.pricebookUrl);
+    // The download runs a server-side fetch of a client-supplied URL, so the
+    // same SSRF surface as the ads calls applies.
+    for (const bad of [
+      'http://169.254.169.254/latest/meta-data/',
+      'https://evil.example.net/pricebook',
+      'file:///etc/passwd',
+      'not a url',
+    ]) {
+      expect(() => parsePricebookDownloadArgs([{ ...good, pricebookUrl: bad }], origins)).toThrow(RpcArgError);
+    }
+    expect(() => parsePricebookDownloadArgs([{ ...good, locationCode: '' }], origins)).toThrow(RpcArgError);
   });
 });
 

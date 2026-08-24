@@ -21,6 +21,8 @@ const emulator: EmulatorBridge = {
     return () => ipcRenderer.removeListener('emulator:inject', handler);
   },
   loadPricebook: (req: { dir?: string; playerCode: string }) => ipcRenderer.invoke('pricebook:load', req),
+  downloadPricebook: (req: { pricebookUrl: string; playerCode: string; playerKey: string; locationCode: string }) =>
+    ipcRenderer.invoke('pricebook:download', req),
   registerPlayer: (req: { playerKey: string; product?: string }) => ipcRenderer.invoke('globalinit:register', req),
   loadPlayerKey: () => ipcRenderer.invoke('globalinit:load'),
   loadQuickKeys: (req: { dir?: string }) => ipcRenderer.invoke('quickkeys:load', req),

@@ -40,6 +40,11 @@ function registerEmulatorIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('emulator:send', (_evt, payload: { channel: Channel; data: string }) => service.send(payload));
   ipcMain.handle('emulator:status', () => service.status());
   ipcMain.handle('pricebook:load', (_evt, req: { dir?: string; playerCode: string }) => service.loadPricebook(req));
+  ipcMain.handle(
+    'pricebook:download',
+    (_evt, req: { pricebookUrl: string; playerCode: string; playerKey: string; locationCode: string }) =>
+      service.downloadPricebook(req),
+  );
   ipcMain.handle('quickkeys:load', (_evt, req: { dir?: string }) => service.loadQuickKeys(req));
   ipcMain.handle('ads:load', (_evt, req: { backendBaseUrl: string; playerCode: string; playerKey: string }) =>
     service.loadAds(req),

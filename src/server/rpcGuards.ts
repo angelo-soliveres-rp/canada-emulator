@@ -146,21 +146,42 @@ export function parseRegisterPlayerArgs(args: unknown[]): { playerKey: string; p
  * the static datacenter hosts plus endpoint origins returned by a successful
  * registration (see `EmulatorService.allowedBackendOrigins`).
  */
-function requireBackendUrl(value: unknown, allowedOrigins: ReadonlySet<string>): string {
-  const url = requireString(value, 'backendBaseUrl', MAX_URL_LENGTH);
+function requireAllowedUrl(value: unknown, field: string, allowedOrigins: ReadonlySet<string>): string {
+  const url = requireString(value, field, MAX_URL_LENGTH);
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    fail('backendBaseUrl: not a valid URL');
+    fail(`${field}: not a valid URL`);
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    fail('backendBaseUrl: must be http(s)');
+    fail(`${field}: must be http(s)`);
   }
   if (!allowedOrigins.has(parsed.origin)) {
-    fail('backendBaseUrl: not a known backend origin (register the player first)');
+    fail(`${field}: not a known backend origin (register the player first)`);
   }
   return url;
+}
+
+function requireBackendUrl(value: unknown, allowedOrigins: ReadonlySet<string>): string {
+  return requireAllowedUrl(value, 'backendBaseUrl', allowedOrigins);
+}
+
+/**
+ * `downloadPricebook` args. The URL is client-supplied at the web RPC boundary,
+ * so it is held to the same known-origin allow-list as the ads calls.
+ */
+export function parsePricebookDownloadArgs(
+  args: unknown[],
+  allowedOrigins: ReadonlySet<string>,
+): { pricebookUrl: string; playerCode: string; playerKey: string; locationCode: string } {
+  const raw = asRecord(args[0], 'downloadPricebook request');
+  return {
+    pricebookUrl: requireAllowedUrl(raw.pricebookUrl, 'pricebookUrl', allowedOrigins),
+    playerCode: requireString(raw.playerCode, 'playerCode', MAX_CODE_LENGTH),
+    playerKey: requireString(raw.playerKey, 'playerKey', MAX_KEY_LENGTH),
+    locationCode: requireString(raw.locationCode, 'locationCode', MAX_CODE_LENGTH),
+  };
 }
 
 export function parseAdsArgs(

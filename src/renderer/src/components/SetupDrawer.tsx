@@ -256,6 +256,18 @@ export function SetupDrawer({ e, open, onClose }: { e: Emu; open: boolean; onClo
               <button className={styles.ghost} onClick={() => void e.loadPricebook()}>
                 Reload pricebook
               </button>
+              <button
+                className={styles.ghost}
+                disabled={!e.canDownloadPricebook}
+                onClick={() => void e.downloadPricebook()}
+                title={
+                  e.canDownloadPricebook
+                    ? "Fetch this player's live pricebook and cache it for next launch"
+                    : 'Register the player first — pricebook.url comes from its datacenter'
+                }
+              >
+                Download pricebook
+              </button>
             </div>
             {e.pricebookStatus && (
               <p className={e.pricebookStatus.ok ? styles.okline : styles.err}>
