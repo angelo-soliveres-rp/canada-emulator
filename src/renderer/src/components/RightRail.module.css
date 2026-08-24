@@ -143,6 +143,16 @@
 .cashierGo:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
 .cashierGo:disabled { opacity: .4; cursor: default; }
 
+/* Suspend / recall a parked basket (Radiant6 1003/1004). */
+.parkrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 0 0 auto; }
+.parkrow button {
+  cursor: pointer; background: var(--surface-2); border: 1px solid var(--border-2);
+  color: var(--text-muted); border-radius: var(--r-md);
+  padding: 7px 6px; font-size: var(--t-xs); font-weight: 600;
+}
+.parkrow button:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.parkrow button:disabled { opacity: .4; cursor: default; }
+
 .tender { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; flex: 0 0 auto; }
 .pay {
   background: var(--ok); color: #06210f; border: 0; border-radius: var(--r-md);

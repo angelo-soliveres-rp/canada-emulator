@@ -131,6 +131,10 @@ export function useEmulator(): {
   loyalty: (cardNumber: string) => void;
   /** Sign a cashier in (Radiant6 2010 / Topaz `CSH:`). */
   cashier: (operatorId: string, operatorName: string) => void;
+  /** Park the open basket (Radiant6 1003). No-op on Topaz/Bulloch. */
+  suspendBasket: () => void;
+  /** Recall the parked basket (Radiant6 1004). No-op on Topaz/Bulloch. */
+  resumeBasket: () => void;
   tender: (kind: TenderKind, amountCents?: number) => void;
   voidTicket: () => void;
   /** Perform any bench action through one funnel; returns the wire it emitted. */
@@ -489,6 +493,10 @@ export function useEmulator(): {
             return session.loyalty(action.card);
           case 'cashier':
             return session.cashierChange({ operatorId: action.operatorId, operatorName: action.operatorName });
+          case 'suspendBasket':
+            return session.suspendBasket();
+          case 'resumeBasket':
+            return session.resumeBasket();
           case 'voidLine':
             return session.voidLine(action.lineNumber);
           case 'setQuantity':
@@ -720,6 +728,12 @@ export function useEmulator(): {
       },
       cashier: (operatorId: string, operatorName: string) => {
         performAction({ kind: 'cashier', operatorId, operatorName });
+      },
+      suspendBasket: () => {
+        performAction({ kind: 'suspendBasket' });
+      },
+      resumeBasket: () => {
+        performAction({ kind: 'resumeBasket' });
       },
       tender: (kind: TenderKind, amountCents?: number) => {
         performAction({ kind: 'tender', tender: kind, amountCents });

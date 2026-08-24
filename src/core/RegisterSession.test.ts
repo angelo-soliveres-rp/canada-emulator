@@ -286,6 +286,86 @@ describe('RegisterSession — radiant6-us (VJ-only, cents-exact, VJ-authoritativ
   });
 });
 
+describe('RegisterSession — basket suspend / resume (1003/1004)', () => {
+  it('suspend ends the transaction with a bare 1003 and no 1002', () => {
+    // Real fixture (liftck_player dev/playbackFiles/replay.log.bak): 1001/1009
+    // /1005/1003 on tx 505, then a fresh 1001/1009 on tx 507 — the suspend is
+    // the terminator, there is no basket-end.
+    const s = new RegisterSession({ registerType: 'radiant6-us' });
+    s.addItem({ code: 'x', description: 'X', priceCents: 500 });
+    const msgs = s.suspendBasket();
+    expect(eventIds(msgs)).toEqual(['1003']);
+    expect(msgs[0].data).toContain('TransactionNumber=1');
+    expect(msgs.some((m) => m.data.includes('EventId=1002'))).toBe(false);
+  });
+
+  it('suspend clears the basket and advances to the next transaction', () => {
+    const s = new RegisterSession({ registerType: 'radiant6-us' });
+    s.addItem({ code: 'x', description: 'X', priceCents: 500 });
+    s.suspendBasket();
+    const snap = s.snapshot();
+    expect(snap.lines).toEqual([]);
+    expect(snap.totalCents).toBe(0);
+    expect(snap.tx).toBe(2);
+    // Lane is closed again, so the next sale opens normally.
+    expect(eventIds(s.open())).toEqual(['1001', '1009']);
+  });
+
+  it('suspend with nothing open emits nothing', () => {
+    expect(new RegisterSession({ registerType: 'radiant6-us' }).suspendBasket()).toEqual([]);
+  });
+
+  it('resume recalls the suspended tx: 1001 then 1004, never a 1009', () => {
+    // The player treats 1004 itself as the basket start (Register.ts
+    // handleBasketResume -> handleBasketStart), so emitting 1009 too would
+    // open two baskets for one recall.
+    const s = new RegisterSession({ registerType: 'radiant6-us' });
+    s.addItem({ code: 'x', description: 'X', priceCents: 500 });
+    s.suspendBasket();
+    const msgs = s.resumeBasket();
+    expect(eventIds(msgs)).toEqual(['1001', '1004']);
+    const resume = msgs.find((m) => m.data.includes('EventId=1004'))!;
+    expect(resume.data).toContain('TransactionNumber=2');
+    expect(resume.data).toContain('StoredTransactionNumber=1');
+  });
+
+  it('resume opens a fresh basket, matching the player (items are not restored)', () => {
+    const s = new RegisterSession({ registerType: 'radiant6-canada' });
+    s.addItem({ code: 'x', description: 'X', priceCents: 500 });
+    s.suspendBasket();
+    s.resumeBasket();
+    expect(s.snapshot().lines).toEqual([]);
+    // Lane is already open — a following item does not re-emit 1001/1009.
+    expect(eventIds(s.addItem({ code: 'y', description: 'Y', priceCents: 100 }))).toEqual(['1011']);
+  });
+
+  it('resume with no suspended transaction omits StoredTransactionNumber', () => {
+    const s = new RegisterSession({ registerType: 'radiant6-us' });
+    const msgs = s.resumeBasket();
+    expect(eventIds(msgs)).toEqual(['1001', '1004']);
+    expect(msgs.every((m) => !m.data.includes('StoredTransactionNumber'))).toBe(true);
+  });
+
+  it('a second resume does not reuse the already-recalled transaction', () => {
+    const s = new RegisterSession({ registerType: 'radiant6-us' });
+    s.addItem({ code: 'x', description: 'X', priceCents: 500 });
+    s.suspendBasket();
+    s.resumeBasket();
+    s.voidTicket();
+    const again = s.resumeBasket();
+    expect(again.every((m) => !m.data.includes('StoredTransactionNumber'))).toBe(true);
+  });
+
+  it('Topaz and Bulloch have no suspend/resume on the wire', () => {
+    for (const registerType of ['verifone', 'bulloch'] as const) {
+      const s = new RegisterSession({ registerType });
+      s.addItem({ code: 'x', description: 'X', priceCents: 500 });
+      expect(s.suspendBasket()).toEqual([]);
+      expect(s.resumeBasket()).toEqual([]);
+    }
+  });
+});
+
 describe('RegisterSession — cashier sign-on', () => {
   // Real captures put the 2010 sign-on BEFORE the first 1001, so a sign-on
   // must not drag the lane open the way loyalty() does.

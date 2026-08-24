@@ -81,6 +81,8 @@ export class RegisterSession {
   private basket: Basket;
   private tx: number;
   private started = false;
+  /** Transaction parked by suspendBasket(), awaiting a resume. */
+  private suspendedTx: number | undefined;
   locale: PosLocale = 'en';
 
   constructor(options: RegisterSessionOptions = {}) {
@@ -253,6 +255,73 @@ export class RegisterSession {
         return [{ channel: 'vj', data: this.topaz.cashier(args.operatorName) }];
       case 'radiant6-canada':
         return [{ channel: 'vj', data: this.encoder.signOn(args) }];
+      default:
+        return assertNever(this.registerType);
+    }
+  }
+
+  /**
+   * Suspend the open basket (EventId 1003). The suspend IS the transaction's
+   * terminator — there is no 1002 — so the lane resets to a fresh basket on the
+   * next transaction number, exactly as the fixture shows. The suspended number
+   * is remembered so a later resume can name it.
+   *
+   * Not wrapped in `emit()`: a closed lane has nothing to suspend, and opening
+   * one just to suspend it would be a lie on the wire.
+   */
+  suspendBasket(): WireMessage[] {
+    if (!this.started) return [];
+    switch (this.registerType) {
+      case 'bulloch':
+      case 'verifone':
+        // Neither wire format carries a suspend concept.
+        return [];
+      case 'radiant6-us':
+      case 'radiant6-canada': {
+        const encoder = this.registerType === 'radiant6-us' ? this.us : this.encoder;
+        const data = encoder.basketSuspend({ tx: this.tx });
+        const suspended = this.tx;
+        this.resetForNextSale();
+        this.suspendedTx = suspended;
+        return [{ channel: 'vj', data }];
+      }
+      default:
+        return assertNever(this.registerType);
+    }
+  }
+
+  /**
+   * Recall a suspended basket (EventId 1004). Emits 1001 then 1004 and NOT a
+   * 1009: the player treats the resume itself as the basket start (Register.ts
+   * handleBasketResume -> handleBasketStart), so a 1009 alongside it would open
+   * two baskets for one recall.
+   *
+   * The recalled basket comes back EMPTY, matching the player — legacy opens a
+   * fresh basket on resume rather than restoring the suspended lines, so
+   * restoring them here would desync the two sides.
+   */
+  resumeBasket(): WireMessage[] {
+    switch (this.registerType) {
+      case 'bulloch':
+      case 'verifone':
+        return [];
+      case 'radiant6-us':
+      case 'radiant6-canada': {
+        const encoder = this.registerType === 'radiant6-us' ? this.us : this.encoder;
+        const storedTx = this.suspendedTx;
+        this.suspendedTx = undefined;
+        this.started = true;
+        return [
+          {
+            channel: 'vj',
+            data: encoder.registerOpen({ tx: this.tx, operatorId: this.operatorId, operatorName: this.operatorName }),
+          },
+          {
+            channel: 'vj',
+            data: encoder.basketResume({ tx: this.tx, ...(storedTx !== undefined ? { storedTx } : {}) }),
+          },
+        ];
+      }
       default:
         return assertNever(this.registerType);
     }

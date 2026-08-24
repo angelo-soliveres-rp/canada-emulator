@@ -27,6 +27,19 @@ describe('Radiant6USEncoder — virtual journal lines', () => {
     );
   });
 
+  it('basketSuspend emits 1003 with only the transaction', () => {
+    expect(enc.basketSuspend({ tx: 505 })).toBe(
+      `EventId=1003,TerminalNumber=1,${TIME},TransactionNumber=505\r\n`,
+    );
+  });
+
+  it('basketResume emits 1004 with the new tx plus StoredTransactionNumber', () => {
+    expect(enc.basketResume({ tx: 507, storedTx: 505 })).toBe(
+      `EventId=1004,TerminalNumber=1,${TIME},TransactionNumber=507,StoredTransactionNumber=505\r\n`,
+    );
+    expect(enc.basketResume({ tx: 507 })).not.toContain('StoredTransactionNumber');
+  });
+
   it('basketStarted emits 1009 Sales', () => {
     expect(enc.basketStarted({ tx: 7 })).toContain('EventId=1009');
     expect(enc.basketStarted({ tx: 7 })).toContain('TransactionType=Sales');

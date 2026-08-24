@@ -25,6 +25,8 @@ export type ScenarioAction =
   | { kind: 'scan'; code: string; description?: string }
   | { kind: 'loyalty'; card: string }
   | { kind: 'cashier'; operatorId: string; operatorName: string }
+  | { kind: 'suspendBasket' }
+  | { kind: 'resumeBasket' }
   | { kind: 'voidLine'; lineNumber: number }
   | { kind: 'setQuantity'; lineNumber: number; quantity: number }
   | { kind: 'setPrice'; lineNumber: number; priceCents: number }
@@ -98,6 +100,8 @@ export type StepDisplayKind =
   | 'TRIGGER'
   | 'LOYALTY'
   | 'CASHIER'
+  | 'SUSPEND'
+  | 'RESUME'
   | 'TENDER'
   | 'VOID'
   | 'EDIT'
@@ -116,6 +120,10 @@ export function stepDisplayKind(step: ScenarioStep): StepDisplayKind {
       return 'LOYALTY';
     case 'cashier':
       return 'CASHIER';
+    case 'suspendBasket':
+      return 'SUSPEND';
+    case 'resumeBasket':
+      return 'RESUME';
     case 'tender':
       return 'TENDER';
     case 'voidLine':
@@ -179,6 +187,10 @@ function parseAction(v: unknown): ScenarioAction | null {
       return { kind: 'tender', tender: v.tender as TenderKind, amountCents: v.amountCents };
     case 'voidTicket':
       return { kind: 'voidTicket' };
+    case 'suspendBasket':
+      return { kind: 'suspendBasket' };
+    case 'resumeBasket':
+      return { kind: 'resumeBasket' };
     default:
       return null;
   }

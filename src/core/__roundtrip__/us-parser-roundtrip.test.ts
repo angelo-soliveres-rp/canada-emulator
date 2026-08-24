@@ -66,6 +66,25 @@ describe('round-trip: US VJ encoder → CKPlayer2.0 Radiant6MessageParser', () =
     expect(events[0].data.cashierName).toBe('Young, Brianna');
   });
 
+  it('basketSuspend decodes to BASKET_SUSPEND', () => {
+    expect(vjActions(enc.basketSuspend({ tx: 505 }))).toContain('BASKET_SUSPEND');
+  });
+
+  it('basketResume decodes to BASKET_RESUME carrying lastTransactId', () => {
+    const events = Radiant6MessageParser.parseLine(SOURCE, enc.basketResume({ tx: 507, storedTx: 505 }), usCtx())!;
+    const resume = events.find((e) => e.action === 'BASKET_RESUME')!;
+    expect(resume).toBeDefined();
+    expect(resume.data.lastTransactId).toBe(505);
+    expect(resume.data.receiptNum).toBe('507');
+  });
+
+  it('a resume with no stored transaction still decodes, without lastTransactId', () => {
+    const events = Radiant6MessageParser.parseLine(SOURCE, enc.basketResume({ tx: 507 }), usCtx())!;
+    const resume = events.find((e) => e.action === 'BASKET_RESUME')!;
+    expect(resume).toBeDefined();
+    expect(resume.data.lastTransactId).toBeUndefined();
+  });
+
   it('itemAdd decodes to SCAN_RECEIVED + ITEM_ADDED with barcode, description and dollar price', () => {
     const events = Radiant6MessageParser.parseLine(
       SOURCE,

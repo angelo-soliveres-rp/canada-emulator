@@ -20,6 +20,20 @@ describe('Radiant6CanadaEncoder — VJ session events', () => {
     );
   });
 
+  it('basketSuspend (1003) carries only the transaction — a suspend has no totals', () => {
+    expect(enc().basketSuspend({ tx: 505 })).toBe(
+      'EventId=1003,TerminalNumber=1,EventTime=2023-01-01T00:00:00.000,TransactionNumber=505\r\n',
+    );
+  });
+
+  it('basketResume (1004) carries the new tx plus the recalled StoredTransactionNumber', () => {
+    expect(enc().basketResume({ tx: 507, storedTx: 505 })).toBe(
+      'EventId=1004,TerminalNumber=1,EventTime=2023-01-01T00:00:00.000,TransactionNumber=507,StoredTransactionNumber=505\r\n',
+    );
+    // Recalling without naming a stored tx omits the field entirely.
+    expect(enc().basketResume({ tx: 507 })).not.toContain('StoredTransactionNumber');
+  });
+
   it('basketStarted (1009) is a Sales transaction', () => {
     const line = enc().basketStarted({ tx: 1 });
     expect(line).toContain('EventId=1009');

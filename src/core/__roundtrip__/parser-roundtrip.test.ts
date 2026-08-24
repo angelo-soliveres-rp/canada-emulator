@@ -55,6 +55,11 @@ describe('round-trip: VJ encoder → CKPlayer2.0 Radiant6CanadaMessageParser', (
     expect(vjActions(enc.signOn({ operatorId: '42', operatorName: 'Joe' }))).toEqual(['CASHIER_RECOGNIZED']);
   });
 
+  it('basketSuspend / basketResume decode to BASKET_SUSPEND / BASKET_RESUME', () => {
+    expect(vjActions(enc.basketSuspend({ tx: 505 }))).toContain('BASKET_SUSPEND');
+    expect(vjActions(enc.basketResume({ tx: 507, storedTx: 505 }))).toContain('BASKET_RESUME');
+  });
+
   it('basketStarted decodes to BASKET_START', () => {
     expect(vjActions(enc.basketStarted({ tx: 1 }))).toContain('BASKET_START');
   });

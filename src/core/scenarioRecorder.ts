@@ -63,6 +63,10 @@ function labelForAction(action: ScenarioAction): string {
       return `Loyalty ${action.card}`;
     case 'cashier':
       return `Cashier ${action.operatorName}`;
+    case 'suspendBasket':
+      return 'Suspend basket';
+    case 'resumeBasket':
+      return 'Resume basket';
     case 'voidLine':
       return `Void line ${action.lineNumber}`;
     case 'setQuantity':

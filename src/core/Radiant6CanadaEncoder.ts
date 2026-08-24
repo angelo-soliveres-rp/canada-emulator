@@ -136,6 +136,29 @@ export class Radiant6CanadaEncoder {
     ]);
   }
 
+  /**
+   * EventId 1003 — basket suspend. Carries the transaction and nothing else:
+   * a suspend is the transaction's terminator, with no 1002 basket-end and no
+   * totals (fixture liftck_player dev/playbackFiles/replay.log.bak — 1001/1009/
+   * 1005/1003 on tx 505, then a fresh 1001/1009 on tx 507).
+   */
+  basketSuspend(args: { tx: number }): string {
+    return this.eventLine(1003, [['TransactionNumber', args.tx]]);
+  }
+
+  /**
+   * EventId 1004 — basket resume (recall a stored transaction). `tx` is the NEW
+   * transaction; `storedTx` is the suspended one being recalled, which the
+   * player reads as `lastTransactId` (Radiant6CanadaMessageParser.ts:350) and
+   * is omitted when unknown.
+   */
+  basketResume(args: { tx: number; storedTx?: number }): string {
+    return this.eventLine(1004, [
+      ['TransactionNumber', args.tx],
+      ...(args.storedTx !== undefined ? ([['StoredTransactionNumber', args.storedTx]] as Field[]) : []),
+    ]);
+  }
+
   basketStarted(args: { tx: number }): string {
     return this.eventLine(1009, [
       ['TransactionNumber', args.tx],

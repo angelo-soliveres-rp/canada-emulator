@@ -247,6 +247,13 @@ export function RightRail({ e, locale }: { e: Emu; locale: PosLocale }): JSX.Ele
                 {!li.voided && (
                   <span className={styles.lineactions}>
                     <button onClick={() => e.setQuantity(li.lineNumber, li.quantity + 1)} title="Add one">+1</button>
+                    <button
+                      disabled={li.quantity <= 1}
+                      onClick={() => e.setQuantity(li.lineNumber, li.quantity - 1)}
+                      title={li.quantity <= 1 ? 'Void the line instead' : 'Remove one'}
+                    >
+                      −1
+                    </button>
                     <button onClick={() => e.setPrice(li.lineNumber, Math.max(0, li.unitPriceCents - 10))} title="Drop price 10¢">−10¢</button>
                     <button className={styles.voidBtn} onClick={() => e.voidLine(li.lineNumber)} title="Void line">void</button>
                   </span>
@@ -272,6 +279,17 @@ export function RightRail({ e, locale }: { e: Emu; locale: PosLocale }): JSX.Ele
       </div>
 
       {e.config.registerType !== 'bulloch' && <CashierBar e={e} />}
+
+      {(e.config.registerType === 'radiant6-us' || e.config.registerType === 'radiant6-canada') && (
+        <div className={styles.parkrow}>
+          <button disabled={!snapshot.started} onClick={() => e.suspendBasket()} title="Park this basket (EventId 1003)">
+            Suspend
+          </button>
+          <button onClick={() => e.resumeBasket()} title="Recall the parked basket (EventId 1004)">
+            Resume
+          </button>
+        </div>
+      )}
 
       {loyaltyActions && (
         <div className={styles.loyalty}>
