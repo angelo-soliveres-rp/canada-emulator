@@ -34,6 +34,38 @@ describe('foldRecording', () => {
     }
   });
 
+  // The 2010 sign-on is NOT lane-open noise: its operator fields are the whole
+  // point of the step, so they must survive into the expectation and re-match
+  // on replay — including through the `,,` comma escape.
+  it('records a cashier sign-on whose expectation replays against the same wire', () => {
+    const s = new RegisterSession({ registerType: 'radiant6-us' });
+    const action = { kind: 'cashier', operatorId: '10000000003', operatorName: 'Young, Brianna' } as const;
+    const cashierWire = wire(s.cashierChange(action));
+
+    const scenario = foldRecording([{ type: 'action', at: 0, action, wire: cashierWire }], {
+      name: 'shift change',
+      registerType: 'radiant6-us',
+    });
+
+    const step = scenario.steps[0];
+    expect(step.kind).toBe('act');
+    if (step.kind !== 'act') return;
+    expect(step.label).toBe('Cashier Young, Brianna');
+    expect(step.expect).toEqual([
+      { channel: 'vj', fields: { EventId: '2010', OperatorId: '10000000003', OperatorName: 'Young, Brianna' } },
+    ]);
+
+    // Replaying the identical action must satisfy the recorded expectation.
+    const replay = wire(new RegisterSession({ registerType: 'radiant6-us' }).cashierChange(action));
+    expect(evaluateExpectations(step.expect, replay).pass).toBe(true);
+
+    // And it survives an export/import cycle unchanged.
+    const reparsed = normalizeScenario(JSON.parse(JSON.stringify(scenario)));
+    expect(reparsed.ok).toBe(true);
+    if (!reparsed.ok) return;
+    expect(evaluateExpectations((reparsed.scenario.steps[0] as typeof step).expect, replay).pass).toBe(true);
+  });
+
   it('skips running-total and lane-open noise (1001/1009/1005/1020) in expectations', () => {
     const s = new RegisterSession({ registerType: 'radiant6-us' });
     const ringWire = wire(s.addItem({ code: 'a', description: 'A', priceCents: 100 }));

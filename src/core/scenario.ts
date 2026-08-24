@@ -24,6 +24,7 @@ export type ScenarioAction =
   | { kind: 'ring'; code: string; description?: string; priceCents?: number; quantity?: number }
   | { kind: 'scan'; code: string; description?: string }
   | { kind: 'loyalty'; card: string }
+  | { kind: 'cashier'; operatorId: string; operatorName: string }
   | { kind: 'voidLine'; lineNumber: number }
   | { kind: 'setQuantity'; lineNumber: number; quantity: number }
   | { kind: 'setPrice'; lineNumber: number; priceCents: number }
@@ -92,7 +93,16 @@ export interface Scenario {
 }
 
 /** The chip vocabulary the step cards render (RING / TRIGGER / WAIT / …). */
-export type StepDisplayKind = 'RING' | 'TRIGGER' | 'LOYALTY' | 'TENDER' | 'VOID' | 'EDIT' | 'WAIT' | 'ASSERT';
+export type StepDisplayKind =
+  | 'RING'
+  | 'TRIGGER'
+  | 'LOYALTY'
+  | 'CASHIER'
+  | 'TENDER'
+  | 'VOID'
+  | 'EDIT'
+  | 'WAIT'
+  | 'ASSERT';
 
 export function stepDisplayKind(step: ScenarioStep): StepDisplayKind {
   if (step.kind === 'wait') return 'WAIT';
@@ -104,6 +114,8 @@ export function stepDisplayKind(step: ScenarioStep): StepDisplayKind {
       return 'TRIGGER';
     case 'loyalty':
       return 'LOYALTY';
+    case 'cashier':
+      return 'CASHIER';
     case 'tender':
       return 'TENDER';
     case 'voidLine':
@@ -146,6 +158,10 @@ function parseAction(v: unknown): ScenarioAction | null {
     case 'loyalty':
       if (typeof v.card !== 'string' || !v.card) return null;
       return { kind: 'loyalty', card: v.card };
+    case 'cashier':
+      if (typeof v.operatorId !== 'string' || !v.operatorId) return null;
+      if (typeof v.operatorName !== 'string' || !v.operatorName) return null;
+      return { kind: 'cashier', operatorId: v.operatorId, operatorName: v.operatorName };
     case 'voidLine':
       if (!optionalNonNegative(v.lineNumber) || v.lineNumber === undefined) return null;
       return { kind: 'voidLine', lineNumber: v.lineNumber };

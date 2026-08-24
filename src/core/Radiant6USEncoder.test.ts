@@ -14,6 +14,19 @@ describe('Radiant6USEncoder — virtual journal lines', () => {
     );
   });
 
+  it('signOn emits 2010 with the operator, shift and business date — and no TransactionNumber', () => {
+    expect(enc.signOn({ operatorId: '12599', operatorName: 'Timothy' })).toBe(
+      `EventId=2010,TerminalNumber=1,${TIME},OperatorId=12599,OperatorName=Timothy,` +
+        'OperatorShiftNumber=1,BusinessDate=2026-07-16\r\n',
+    );
+  });
+
+  it('signOn escapes a `Last, First` operator name as `Last,, First`', () => {
+    expect(enc.signOn({ operatorId: '42', operatorName: 'Young, Brianna' })).toContain(
+      'OperatorName=Young,, Brianna',
+    );
+  });
+
   it('basketStarted emits 1009 Sales', () => {
     expect(enc.basketStarted({ tx: 7 })).toContain('EventId=1009');
     expect(enc.basketStarted({ tx: 7 })).toContain('TransactionType=Sales');

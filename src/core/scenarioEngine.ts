@@ -26,13 +26,26 @@ export interface ObservedLine {
 
 export type StepStatus = 'pending' | 'running' | 'pass' | 'fail' | 'skipped';
 
+/**
+ * Stand-in for an escaped `,,` while a line is split on its real separators.
+ * NUL never reaches the wire — the encoders emit printable field text and
+ * collapse CR/LF — so it cannot collide with a real value.
+ */
+const ESCAPED_COMMA = '\u0000';
+
 /** Parse a comma-separated `key=value` VJ line into its fields (empty for plaintext). */
 export function parseWireFields(text: string): Map<string, string> {
   const fields = new Map<string, string>();
-  for (const piece of text.replace(/\r?\n$/, '').split(',')) {
+  // The register escapes a comma inside a value as `,,` (fr decimals, operator
+  // names, descriptions). Mask those before splitting on `,` and restore them
+  // after — the same two-step the player's parseKeyValues does. Splitting
+  // naively would truncate `OperatorName=Young,, Brianna` to `Young` and leave
+  // ` Brianna` as a junk piece.
+  for (const piece of text.replace(/\r?\n$/, '').replace(/,,/g, ESCAPED_COMMA).split(',')) {
     const eq = piece.indexOf('=');
     if (eq <= 0) continue;
-    fields.set(piece.slice(0, eq).trim(), piece.slice(eq + 1).trim());
+    const unmask = (s: string): string => s.split(ESCAPED_COMMA).join(',').trim();
+    fields.set(unmask(piece.slice(0, eq)), unmask(piece.slice(eq + 1)));
   }
   return fields;
 }
@@ -141,6 +154,10 @@ const STABLE_FIELDS = [
   'NewQuantity',
   'NewPrice',
   'DiscountCardNumber',
+  // Cashier identity on a 2010 sign-on — the whole point of that step, so a
+  // recorded cashier switch has to re-assert it rather than just its EventId.
+  'OperatorId',
+  'OperatorName',
   'SubtotalAmount',
   'TaxAmount',
   'TotalAmount',

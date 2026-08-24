@@ -37,6 +37,17 @@ const LOYALTY_ACTIONS: Partial<Record<RegisterType, ReadonlyArray<LoyaltyAction>
   ],
 };
 
+/**
+ * Cashier presets. Names follow the legacy fixture shape `Last, First`
+ * (`OperatorName=Young,, Brianna` on the wire once the encoder escapes the
+ * comma) so the escape path gets exercised by hand, not only by tests.
+ */
+const CASHIER_PRESETS: ReadonlyArray<{ operatorId: string; operatorName: string }> = [
+  { operatorId: '12599', operatorName: 'Timothy' },
+  { operatorId: '10000000003', operatorName: 'Young, Brianna' },
+  { operatorId: '10000000002', operatorName: 'Manager, The' },
+];
+
 interface ScanCandidate {
   code: string;
   description: string;
@@ -260,6 +271,8 @@ export function RightRail({ e, locale }: { e: Emu; locale: PosLocale }): JSX.Ele
         </div>
       </div>
 
+      {e.config.registerType !== 'bulloch' && <CashierBar e={e} />}
+
       {loyaltyActions && (
         <div className={styles.loyalty}>
           {loyaltyActions.map((a) => (
@@ -285,6 +298,74 @@ export function RightRail({ e, locale }: { e: Emu; locale: PosLocale }): JSX.Ele
         </button>
       </div>
     </section>
+  );
+}
+
+/**
+ * Cashier sign-on: who is on the lane now, preset cashiers, and free-text
+ * id + name for an arbitrary operator. Hidden for Bulloch, which is pole-only
+ * and carries no cashier identity.
+ */
+function CashierBar({ e }: { e: Emu }): JSX.Element {
+  const [id, setId] = useState('');
+  const [name, setName] = useState('');
+
+  const trimmedId = id.trim();
+  const trimmedName = name.trim();
+  const canSignIn = trimmedId !== '' && trimmedName !== '';
+
+  const signIn = (): void => {
+    if (!canSignIn) return;
+    e.cashier(trimmedId, trimmedName);
+    setId('');
+    setName('');
+  };
+
+  return (
+    <div className={styles.cashier}>
+      <div className={styles.cashierNow}>
+        <span className={styles.cashierLabel}>CASHIER</span>
+        <span className={styles.cashierWho}>
+          {e.snapshot.operatorId} · {e.snapshot.operatorName}
+        </span>
+      </div>
+
+      <div className={styles.cashierPresets}>
+        {CASHIER_PRESETS.map((c) => (
+          <button
+            key={c.operatorId}
+            onClick={() => e.cashier(c.operatorId, c.operatorName)}
+            title={`Sign in ${c.operatorName} (${c.operatorId})`}
+          >
+            {c.operatorName}
+          </button>
+        ))}
+      </div>
+
+      <div className={styles.cashierForm}>
+        <input
+          className={styles.cashierId}
+          value={id}
+          placeholder="id"
+          spellCheck={false}
+          aria-label="Cashier id"
+          onChange={(ev) => setId(ev.target.value)}
+          onKeyDown={(ev) => ev.key === 'Enter' && signIn()}
+        />
+        <input
+          className={styles.cashierName}
+          value={name}
+          placeholder="name"
+          spellCheck={false}
+          aria-label="Cashier name"
+          onChange={(ev) => setName(ev.target.value)}
+          onKeyDown={(ev) => ev.key === 'Enter' && signIn()}
+        />
+        <button className={styles.cashierGo} disabled={!canSignIn} onClick={signIn}>
+          Sign in
+        </button>
+      </div>
+    </div>
   );
 }
 

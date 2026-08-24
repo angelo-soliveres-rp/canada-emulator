@@ -24,6 +24,22 @@ describe('parseWireFields', () => {
   it('returns empty for plaintext lines', () => {
     expect(parseWireFields('  1 LRG POLAR POP        1.00').size).toBe(0);
   });
+
+  // The register escapes an embedded comma as `,,` (legacy fixture
+  // `OperatorName=Young,, Brianna`); unmask before splitting or the value
+  // truncates at the comma and the tail becomes a junk field.
+  it('unmasks `,,` inside values instead of splitting on it', () => {
+    const fields = parseWireFields(
+      'EventId=2010,OperatorId=42,OperatorName=Young,, Brianna,OperatorShiftNumber=1\r\n',
+    );
+    expect(fields.get('OperatorName')).toBe('Young, Brianna');
+    expect(fields.get('OperatorShiftNumber')).toBe('1');
+    expect(fields.size).toBe(4);
+  });
+
+  it('unmasks `,,` in fr decimal amounts', () => {
+    expect(parseWireFields('EventId=1011,UnitPrice=1,,94\r\n').get('UnitPrice')).toBe('1,94');
+  });
 });
 
 describe('normalizeWireText', () => {

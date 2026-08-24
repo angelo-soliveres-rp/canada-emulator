@@ -47,6 +47,25 @@ describe('round-trip: US VJ encoder → CKPlayer2.0 Radiant6MessageParser', () =
     expect(actions).toContain('CASHIER_RECOGNIZED');
   });
 
+  // The parser has no 2010 branch — it raises CASHIER_RECOGNIZED from the
+  // operator fields BEFORE the EventId switch, then lets the line fall through.
+  // So a sign-on must decode to the cashier event and nothing else.
+  it('signOn decodes to CASHIER_RECOGNIZED alone, carrying code and name', () => {
+    const events = Radiant6MessageParser.parseLine(SOURCE, enc.signOn({ operatorId: '42', operatorName: 'Joe' }), usCtx())!;
+    expect(events.map((e) => e.action)).toEqual(['CASHIER_RECOGNIZED']);
+    expect(events[0].data.cashierCode).toBe('42');
+    expect(events[0].data.cashierName).toBe('Joe');
+  });
+
+  it('signOn survives a `Last, First` operator name through the `,,` escape', () => {
+    const events = Radiant6MessageParser.parseLine(
+      SOURCE,
+      enc.signOn({ operatorId: '42', operatorName: 'Young, Brianna' }),
+      usCtx(),
+    )!;
+    expect(events[0].data.cashierName).toBe('Young, Brianna');
+  });
+
   it('itemAdd decodes to SCAN_RECEIVED + ITEM_ADDED with barcode, description and dollar price', () => {
     const events = Radiant6MessageParser.parseLine(
       SOURCE,

@@ -32,6 +32,25 @@ describe('normalizeScenario', () => {
     expect(second).toEqual(first);
   });
 
+  it('round-trips a cashier step and rejects a blank operator', () => {
+    const withCashier = {
+      ...minimal,
+      steps: [{ kind: 'act', label: 'Cashier Brianna', action: { kind: 'cashier', operatorId: '77', operatorName: 'Young, Brianna' } }],
+    };
+    const res = normalizeScenario(withCashier);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const step = res.scenario.steps[0];
+    expect(step.kind).toBe('act');
+    if (step.kind !== 'act') return;
+    expect(step.action).toEqual({ kind: 'cashier', operatorId: '77', operatorName: 'Young, Brianna' });
+    expect(normalizeScenario(JSON.parse(JSON.stringify(res.scenario)))).toEqual(res);
+
+    for (const bad of [{ operatorId: '', operatorName: 'B' }, { operatorId: '77' }, { operatorName: 'B' }]) {
+      expect(normalizeScenario({ ...minimal, steps: [{ kind: 'act', label: 'x', action: { kind: 'cashier', ...bad } }] }).ok).toBe(false);
+    }
+  });
+
   it('rejects non-objects and missing names', () => {
     expect(normalizeScenario(null).ok).toBe(false);
     expect(normalizeScenario('nope').ok).toBe(false);
@@ -71,6 +90,7 @@ describe('stepDisplayKind', () => {
     expect(stepDisplayKind(act({ kind: 'ring', code: 'a', priceCents: 1 }))).toBe('RING');
     expect(stepDisplayKind(act({ kind: 'scan', code: 'a' }))).toBe('TRIGGER');
     expect(stepDisplayKind(act({ kind: 'loyalty', card: '1' }))).toBe('LOYALTY');
+    expect(stepDisplayKind(act({ kind: 'cashier', operatorId: '1', operatorName: 'B' }))).toBe('CASHIER');
     expect(stepDisplayKind(act({ kind: 'tender', tender: 'cash-exact' }))).toBe('TENDER');
     expect(stepDisplayKind(act({ kind: 'voidLine', lineNumber: 1 }))).toBe('VOID');
     expect(stepDisplayKind(act({ kind: 'voidTicket' }))).toBe('VOID');

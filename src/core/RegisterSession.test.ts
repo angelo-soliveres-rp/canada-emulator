@@ -286,6 +286,63 @@ describe('RegisterSession — radiant6-us (VJ-only, cents-exact, VJ-authoritativ
   });
 });
 
+describe('RegisterSession — cashier sign-on', () => {
+  // Real captures put the 2010 sign-on BEFORE the first 1001, so a sign-on
+  // must not drag the lane open the way loyalty() does.
+  it('emits a standalone 2010 without opening the lane (radiant6 families)', () => {
+    for (const registerType of ['radiant6-us', 'radiant6-canada'] as const) {
+      const s = new RegisterSession({ registerType });
+      const msgs = s.cashierChange({ operatorId: '77', operatorName: 'Brianna' });
+      expect(eventIds(msgs)).toEqual(['2010']);
+      expect(msgs[0].data).toContain('OperatorId=77');
+      expect(msgs[0].data).toContain('OperatorName=Brianna');
+      expect(msgs[0].data).not.toContain('TransactionNumber');
+      // Lane still closed — the next action emits the full open preamble.
+      expect(eventIds(s.open())).toEqual(['1001', '1009']);
+    }
+  });
+
+  it('carries the new cashier onto the subsequent 1001', () => {
+    const s = new RegisterSession({ registerType: 'radiant6-us' });
+    s.cashierChange({ operatorId: '77', operatorName: 'Brianna' });
+    const open = s.open().find((m) => m.data.includes('EventId=1001'));
+    expect(open!.data).toContain('OperatorId=77');
+    expect(open!.data).toContain('OperatorName=Brianna');
+    expect(open!.data).not.toContain('Timothy');
+  });
+
+  it('emits a CSH: line on Topaz and nothing on Bulloch', () => {
+    const topaz = new RegisterSession({ registerType: 'verifone' }).cashierChange({
+      operatorId: '77',
+      operatorName: 'BRIANNA',
+    });
+    expect(topaz).toHaveLength(1);
+    expect(topaz[0].channel).toBe('vj');
+    expect(topaz[0].data).toContain('CSH: BRIANNA');
+
+    expect(new RegisterSession({ registerType: 'bulloch' }).cashierChange({ operatorId: '77', operatorName: 'B' })).toEqual([]);
+  });
+
+  it('switches cashier mid-basket without disturbing lines or totals', () => {
+    const s = new RegisterSession({ registerType: 'radiant6-us' });
+    s.addItem({ code: '049000000443', description: 'Coke', priceCents: 200 });
+    const before = s.snapshot();
+    const msgs = s.cashierChange({ operatorId: '77', operatorName: 'Brianna' });
+    expect(eventIds(msgs)).toEqual(['2010']);
+    const after = s.snapshot();
+    expect(after.lines).toEqual(before.lines);
+    expect(after.totalCents).toBe(before.totalCents);
+    expect(after.tx).toBe(before.tx);
+  });
+
+  it('honours the constructor operator defaults', () => {
+    const open = new RegisterSession({ registerType: 'radiant6-us', operatorId: '900', operatorName: 'Casey' })
+      .open()
+      .find((m) => m.data.includes('EventId=1001'));
+    expect(open!.data).toContain('OperatorId=900,OperatorName=Casey');
+  });
+});
+
 describe('RegisterSession — verifone (Topaz plaintext VJ + non-authoritative pole)', () => {
   const topaz = (): RegisterSession => new RegisterSession({ registerType: 'verifone' });
 

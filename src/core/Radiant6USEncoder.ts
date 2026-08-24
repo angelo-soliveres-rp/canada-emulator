@@ -87,6 +87,26 @@ export class Radiant6USEncoder {
     ]);
   }
 
+  /**
+   * EventId 2010 — cashier sign-on. Carries no TransactionNumber: it happens
+   * between baskets, and real captures open with it before the first 1001
+   * (liftck_player dev/playbackFiles GREAT_LAKES.xml:1, marlboro/ckhl-6716-1.xml:1).
+   *
+   * The player has no 2010 branch — both the legacy VJ (Radiant6VirtualJournal.java:157-163)
+   * and CK Player 2.0 (Radiant6MessageParser.ts:203) raise CASHIER_RECOGNIZED from any
+   * line carrying OperatorId/OperatorName *before* the EventId switch, then let this one
+   * fall through unhandled. So 2010 is chosen for wire realism, not because it is routed.
+   */
+  signOn(args: { operatorId: string; operatorName: string; shift?: number }): string {
+    return this.eventLine(2010, [
+      ['OperatorId', args.operatorId],
+      ['OperatorName', args.operatorName],
+      ['OperatorShiftNumber', args.shift ?? 1],
+      // Same calendar day as EventTime, which is already local-formatted.
+      ['BusinessDate', formatEventTime(this.clock()).slice(0, 10)],
+    ]);
+  }
+
   basketStarted(args: { tx: number }): string {
     return this.eventLine(1009, [
       ['TransactionNumber', args.tx],

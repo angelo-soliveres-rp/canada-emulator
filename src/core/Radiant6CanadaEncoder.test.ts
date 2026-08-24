@@ -13,6 +13,13 @@ describe('Radiant6CanadaEncoder — VJ session events', () => {
     );
   });
 
+  it('signOn (2010) carries the operator, shift and business date but no transaction', () => {
+    expect(enc().signOn({ operatorId: '42', operatorName: 'Joe' })).toBe(
+      'EventId=2010,TerminalNumber=1,EventTime=2023-01-01T00:00:00.000,OperatorId=42,OperatorName=Joe,' +
+        'OperatorShiftNumber=1,BusinessDate=2023-01-01\r\n',
+    );
+  });
+
   it('basketStarted (1009) is a Sales transaction', () => {
     const line = enc().basketStarted({ tx: 1 });
     expect(line).toContain('EventId=1009');

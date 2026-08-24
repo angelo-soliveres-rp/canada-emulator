@@ -46,6 +46,9 @@ export interface SessionSnapshot {
   tx: number;
   started: boolean;
   locale: PosLocale;
+  /** The cashier currently signed in (see RegisterSession.cashierChange). */
+  operatorId: string;
+  operatorName: string;
   lines: LineSnapshot[];
   subtotalCents: number;
   taxCents: number;
@@ -72,8 +75,9 @@ export class RegisterSession {
   private readonly bulloch: BullochEncoder;
   private readonly registerType: RegisterType;
   private readonly taxRateBps: number;
-  private readonly operatorId: string;
-  private readonly operatorName: string;
+  // Mutable: a cashier can sign in mid-shift (see cashierChange).
+  private operatorId: string;
+  private operatorName: string;
   private basket: Basket;
   private tx: number;
   private started = false;
@@ -226,6 +230,34 @@ export class RegisterSession {
   open(): WireMessage[] {
     return this.ensureStarted();
   }
+
+  /**
+   * A cashier signs in. Radiant6 emits a standalone EventId 2010; Topaz emits
+   * its `CSH:` line; Bulloch has no cashier concept (pole-only) so it's a no-op.
+   *
+   * Deliberately NOT wrapped in `emit()` — unlike loyalty(), a sign-on must not
+   * drag the lane open. Real captures put 2010 *before* the first 1001
+   * (liftck_player dev/playbackFiles GREAT_LAKES.xml:1), and the player raises
+   * CASHIER_RECOGNIZED from the operator fields alone, with no basket needed.
+   * The new operator is remembered, so the next lane-open carries it too.
+   */
+  cashierChange(args: { operatorId: string; operatorName: string }): WireMessage[] {
+    this.operatorId = args.operatorId;
+    this.operatorName = args.operatorName;
+    switch (this.registerType) {
+      case 'bulloch':
+        return [];
+      case 'radiant6-us':
+        return [{ channel: 'vj', data: this.us.signOn(args) }];
+      case 'verifone':
+        return [{ channel: 'vj', data: this.topaz.cashier(args.operatorName) }];
+      case 'radiant6-canada':
+        return [{ channel: 'vj', data: this.encoder.signOn(args) }];
+      default:
+        return assertNever(this.registerType);
+    }
+  }
+
 
   addItem(input: AddItemInput): WireMessage[] {
     return this.emit(() => {
@@ -568,6 +600,8 @@ export class RegisterSession {
       tx: this.tx,
       started: this.started,
       locale: this.locale,
+      operatorId: this.operatorId,
+      operatorName: this.operatorName,
       lines: this.basket.lineItems().map((li) => ({
         lineNumber: li.lineNumber,
         code: li.code,

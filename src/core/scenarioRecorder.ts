@@ -61,6 +61,8 @@ function labelForAction(action: ScenarioAction): string {
       return action.description?.trim() || `Scan ${action.code}`;
     case 'loyalty':
       return `Loyalty ${action.card}`;
+    case 'cashier':
+      return `Cashier ${action.operatorName}`;
     case 'voidLine':
       return `Void line ${action.lineNumber}`;
     case 'setQuantity':

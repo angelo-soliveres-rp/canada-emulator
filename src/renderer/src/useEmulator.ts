@@ -122,6 +122,8 @@ export function useEmulator(): {
   setQuantity: (lineNumber: number, qty: number) => void;
   setPrice: (lineNumber: number, priceCents: number) => void;
   loyalty: (cardNumber: string) => void;
+  /** Sign a cashier in (Radiant6 2010 / Topaz `CSH:`). */
+  cashier: (operatorId: string, operatorName: string) => void;
   tender: (kind: TenderKind, amountCents?: number) => void;
   voidTicket: () => void;
   /** Perform any bench action through one funnel; returns the wire it emitted. */
@@ -165,12 +167,17 @@ export function useEmulator(): {
 
   // One session per lane. Rebuilt when the register type changes so the wire
   // protocol matches (Radiant6 Canada = VJ + pole, Bulloch = pole-only). The
-  // cashier/shopper locale carries across the switch.
+  // cashier/shopper locale and the signed-in cashier carry across the switch —
+  // switching protocol does not send anyone home.
   const sessionRef = useRef<RegisterSession | null>(null);
   const sessionTypeRef = useRef<RegisterType | undefined>(undefined);
   if (sessionRef.current === null || sessionTypeRef.current !== config.registerType) {
     const previous = sessionRef.current;
-    const next = new RegisterSession({ registerType: config.registerType });
+    const carried = previous?.snapshot();
+    const next = new RegisterSession({
+      registerType: config.registerType,
+      ...(carried ? { operatorId: carried.operatorId, operatorName: carried.operatorName } : {}),
+    });
     if (previous) next.setLocale(previous.locale);
     sessionRef.current = next;
     sessionTypeRef.current = config.registerType;
@@ -446,6 +453,8 @@ export function useEmulator(): {
           }
           case 'loyalty':
             return session.loyalty(action.card);
+          case 'cashier':
+            return session.cashierChange({ operatorId: action.operatorId, operatorName: action.operatorName });
           case 'voidLine':
             return session.voidLine(action.lineNumber);
           case 'setQuantity':
@@ -673,6 +682,9 @@ export function useEmulator(): {
       },
       loyalty: (cardNumber: string) => {
         performAction({ kind: 'loyalty', card: cardNumber });
+      },
+      cashier: (operatorId: string, operatorName: string) => {
+        performAction({ kind: 'cashier', operatorId, operatorName });
       },
       tender: (kind: TenderKind, amountCents?: number) => {
         performAction({ kind: 'tender', tender: kind, amountCents });

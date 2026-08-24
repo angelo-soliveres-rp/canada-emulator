@@ -111,6 +111,38 @@
 .loyalty button:hover { color: var(--text); border-color: var(--accent); }
 .loyalty small { font-size: 9px; color: var(--text-faint); }
 
+/* Cashier sign-on. Rows stack, so the whole block survives a quarter-screen
+   window; the preset chips wrap rather than squeezing to unreadable widths. */
+.cashier { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; }
+.cashierNow { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.cashierLabel { font-size: 9px; font-weight: 600; letter-spacing: .08em; color: var(--text-faint); }
+.cashierWho {
+  font-size: var(--t-xs); font-weight: 500; color: var(--ch-pole);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cashierPresets { display: flex; flex-wrap: wrap; gap: 6px; }
+.cashierPresets button {
+  cursor: pointer; background: var(--surface-2); border: 1px solid var(--border-2);
+  color: var(--text-muted); border-radius: var(--r-md);
+  padding: 5px 9px; font-size: var(--t-xs); font-weight: 500;
+}
+.cashierPresets button:hover { color: var(--text); border-color: var(--accent); }
+.cashierForm { display: flex; gap: 6px; }
+.cashierId, .cashierName {
+  min-width: 0; background: var(--surface-2); border: 1px solid var(--border-2);
+  color: var(--text); border-radius: var(--r-md); padding: 5px 7px; font-size: var(--t-xs);
+}
+.cashierId { flex: 1 1 0; }
+.cashierName { flex: 2 1 0; }
+.cashierId:focus, .cashierName:focus { outline: none; border-color: var(--accent); }
+.cashierGo {
+  flex: 0 0 auto; cursor: pointer; background: var(--surface-2);
+  border: 1px solid var(--border-2); color: var(--text-muted);
+  border-radius: var(--r-md); padding: 5px 9px; font-size: var(--t-xs); font-weight: 600;
+}
+.cashierGo:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.cashierGo:disabled { opacity: .4; cursor: default; }
+
 .tender { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; flex: 0 0 auto; }
 .pay {
   background: var(--ok); color: #06210f; border: 0; border-radius: var(--r-md);

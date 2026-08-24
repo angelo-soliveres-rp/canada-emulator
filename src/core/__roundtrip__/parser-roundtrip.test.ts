@@ -49,6 +49,12 @@ describe('round-trip: VJ encoder → CKPlayer2.0 Radiant6CanadaMessageParser', (
     expect(actions).toContain('CASHIER_RECOGNIZED');
   });
 
+  // No 2010 branch in the parser: CASHIER_RECOGNIZED is raised from the
+  // operator fields before the EventId switch, then the line falls through.
+  it('signOn decodes to CASHIER_RECOGNIZED alone, carrying code and name', () => {
+    expect(vjActions(enc.signOn({ operatorId: '42', operatorName: 'Joe' }))).toEqual(['CASHIER_RECOGNIZED']);
+  });
+
   it('basketStarted decodes to BASKET_START', () => {
     expect(vjActions(enc.basketStarted({ tx: 1 }))).toContain('BASKET_START');
   });

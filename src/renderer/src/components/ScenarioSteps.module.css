@@ -45,6 +45,7 @@
 .kind[data-kind='RING'] { color: var(--ch-vj); }
 .kind[data-kind='TRIGGER'] { color: var(--ch-scanner); }
 .kind[data-kind='LOYALTY'] { color: var(--ok); }
+.kind[data-kind='CASHIER'] { color: var(--ch-pole); }
 .kind[data-kind='WAIT'] { color: var(--warn); }
 .kind[data-kind='TENDER'] { color: var(--ch-pole); }
 .kind[data-kind='VOID'],
