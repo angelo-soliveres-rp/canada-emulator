@@ -25,6 +25,7 @@ export type ScenarioAction =
   | { kind: 'scan'; code: string; description?: string }
   | { kind: 'loyalty'; card: string; cardId?: string }
   | { kind: 'cashier'; operatorId: string; operatorName: string }
+  | { kind: 'ageVerify'; verified: boolean; dob?: string }
   | { kind: 'suspendBasket' }
   | { kind: 'resumeBasket' }
   | { kind: 'voidLine'; lineNumber: number }
@@ -100,6 +101,7 @@ export type StepDisplayKind =
   | 'TRIGGER'
   | 'LOYALTY'
   | 'CASHIER'
+  | 'AGE'
   | 'SUSPEND'
   | 'RESUME'
   | 'TENDER'
@@ -120,6 +122,8 @@ export function stepDisplayKind(step: ScenarioStep): StepDisplayKind {
       return 'LOYALTY';
     case 'cashier':
       return 'CASHIER';
+    case 'ageVerify':
+      return 'AGE';
     case 'suspendBasket':
       return 'SUSPEND';
     case 'resumeBasket':
@@ -188,6 +192,10 @@ function parseAction(v: unknown): ScenarioAction | null {
       return { kind: 'tender', tender: v.tender as TenderKind, amountCents: v.amountCents };
     case 'voidTicket':
       return { kind: 'voidTicket' };
+    case 'ageVerify':
+      if (typeof v.verified !== 'boolean') return null;
+      if (!optionalString(v.dob)) return null;
+      return { kind: 'ageVerify', verified: v.verified, ...(v.dob ? { dob: v.dob } : {}) };
     case 'suspendBasket':
       return { kind: 'suspendBasket' };
     case 'resumeBasket':

@@ -63,6 +63,8 @@ function labelForAction(action: ScenarioAction): string {
       return `Loyalty ${action.card}`;
     case 'cashier':
       return `Cashier ${action.operatorName}`;
+    case 'ageVerify':
+      return action.verified ? 'ID verified' : 'ID check skipped';
     case 'suspendBasket':
       return 'Suspend basket';
     case 'resumeBasket':

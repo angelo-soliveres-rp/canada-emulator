@@ -295,6 +295,29 @@ describe('RegisterSession — radiant6-us (VJ-only, cents-exact, VJ-authoritativ
   });
 });
 
+describe('RegisterSession — age verification', () => {
+  it('Topaz emits the ID-check journal line', () => {
+    const s = new RegisterSession({ registerType: 'verifone' });
+    const skipped = s.ageVerify({ verified: false });
+    expect(skipped.some((m) => m.data.includes('ID CHECK SKIPPED'))).toBe(true);
+    expect(new RegisterSession({ registerType: 'verifone' }).ageVerify({ verified: true }).some((m) =>
+      m.data.includes('CUSTOMER ID VERIFIED'),
+    )).toBe(true);
+  });
+
+  // Radiant6 has no age-verification event: the player derives age restriction
+  // from the scanned item's own pricebook attributes (minAge / tobacco /
+  // alcohol), and the legacy emulator's dialog says so out loud — it is
+  // labelled "*No event being sent to player" (AgeVerificationDialog.java:45).
+  it('Radiant6 and Bulloch have no age-verification wire event', () => {
+    for (const registerType of ['radiant6-us', 'radiant6-canada', 'bulloch'] as const) {
+      const s = new RegisterSession({ registerType });
+      s.addItem({ code: 'x', description: 'CIGARETTES', priceCents: 1200 });
+      expect(s.ageVerify({ verified: true })).toEqual([]);
+    }
+  });
+});
+
 describe('RegisterSession — basket suspend / resume (1003/1004)', () => {
   it('suspend ends the transaction with a bare 1003 and no 1002', () => {
     // Real fixture (liftck_player dev/playbackFiles/replay.log.bak): 1001/1009

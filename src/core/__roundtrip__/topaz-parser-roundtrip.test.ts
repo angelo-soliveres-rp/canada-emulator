@@ -42,6 +42,27 @@ describe('round-trip: Topaz VJ encoder → CKPlayer2.0 TopazMessageParser', () =
     expect(e.data.cashierName).toBe('LAKELEY');
   });
 
+  // The parser matches the id-check line only to throw it away
+  // (TopazMessageParser.ts:287 returns []). Worth pinning: the line's shape is
+  // close enough to the item-add regex that a regression would ring it up as a
+  // phantom item mid-basket.
+  it('an ID-check line is swallowed, never rung up as an item', () => {
+    for (const line of [enc.idCheck({ verified: false }), enc.idCheck({ verified: true })]) {
+      const events = parse(line);
+      expect(events).toEqual([]);
+    }
+  });
+
+  it('an ID-check line between two items leaves the basket at exactly those two', () => {
+    const frames =
+      enc.itemAdd({ description: 'ZIG ZAG CIG PPR', quantity: 1, extendedCents: 259 }) +
+      enc.idCheck({ verified: true }) +
+      enc.itemAdd({ description: 'COKE ZERO EACH', quantity: 1, extendedCents: 199 });
+    const added = parse(frames).filter((e) => e.action === 'ITEM_ADDED');
+    expect(added).toHaveLength(2);
+    expect(added.map((e) => e.data.description)).toEqual(['ZIG ZAG CIG PPR', 'COKE ZERO EACH']);
+  });
+
   it('item add decodes to ITEM_ADDED with description, quantity and dollar amount', () => {
     const e = one(enc.itemAdd({ description: 'COKE ZERO EACH', quantity: 5, extendedCents: 745 }));
     expect(e.action).toBe('ITEM_ADDED');

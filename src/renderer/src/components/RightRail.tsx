@@ -280,6 +280,17 @@ export function RightRail({ e, locale }: { e: Emu; locale: PosLocale }): JSX.Ele
 
       {e.config.registerType !== 'bulloch' && <CashierBar e={e} />}
 
+      {e.config.registerType === 'verifone' && (
+        <div className={styles.parkrow}>
+          <button onClick={() => e.ageVerify(true)} title="CUSTOMER ID VERIFIED — the player must discard this line">
+            ID verified
+          </button>
+          <button onClick={() => e.ageVerify(false)} title="ID CHECK SKIPPED — the player must discard this line">
+            ID skipped
+          </button>
+        </div>
+      )}
+
       {(e.config.registerType === 'radiant6-us' || e.config.registerType === 'radiant6-canada') && (
         <div className={styles.parkrow}>
           <button disabled={!snapshot.started} onClick={() => e.suspendBasket()} title="Park this basket (EventId 1003)">

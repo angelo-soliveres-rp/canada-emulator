@@ -261,6 +261,26 @@ export class RegisterSession {
   }
 
   /**
+   * Cashier answers an age prompt. Only Topaz carries this on the wire; the
+   * Radiant6 families derive age restriction from the scanned item's own
+   * pricebook attributes (minAge / tobacco / alcohol) and have no event for it
+   * — the legacy emulator's own dialog admits as much, labelled
+   * "*No event being sent to player" (AgeVerificationDialog.java:45).
+   */
+  ageVerify(args: { verified: boolean; dob?: string }): WireMessage[] {
+    switch (this.registerType) {
+      case 'bulloch':
+      case 'radiant6-us':
+      case 'radiant6-canada':
+        return [];
+      case 'verifone':
+        return this.emit(() => [{ channel: 'vj', data: this.topaz.idCheck(args) }]);
+      default:
+        return assertNever(this.registerType);
+    }
+  }
+
+  /**
    * Suspend the open basket (EventId 1003). The suspend IS the transaction's
    * terminator — there is no 1002 — so the lane resets to a fresh basket on the
    * next transaction number, exactly as the fixture shows. The suspended number

@@ -132,6 +132,8 @@ export function useEmulator(): {
   loyalty: (cardNumber: string, cardId?: string) => void;
   /** Sign a cashier in (Radiant6 2010 / Topaz `CSH:`). */
   cashier: (operatorId: string, operatorName: string) => void;
+  /** Answer an age prompt (Topaz ID-check journal line). No-op elsewhere. */
+  ageVerify: (verified: boolean, dob?: string) => void;
   /** Park the open basket (Radiant6 1003). No-op on Topaz/Bulloch. */
   suspendBasket: () => void;
   /** Recall the parked basket (Radiant6 1004). No-op on Topaz/Bulloch. */
@@ -494,6 +496,8 @@ export function useEmulator(): {
             return session.loyalty(action.card, action.cardId);
           case 'cashier':
             return session.cashierChange({ operatorId: action.operatorId, operatorName: action.operatorName });
+          case 'ageVerify':
+            return session.ageVerify({ verified: action.verified, dob: action.dob });
           case 'suspendBasket':
             return session.suspendBasket();
           case 'resumeBasket':
@@ -729,6 +733,9 @@ export function useEmulator(): {
       },
       cashier: (operatorId: string, operatorName: string) => {
         performAction({ kind: 'cashier', operatorId, operatorName });
+      },
+      ageVerify: (verified: boolean, dob?: string) => {
+        performAction({ kind: 'ageVerify', verified, ...(dob ? { dob } : {}) });
       },
       suspendBasket: () => {
         performAction({ kind: 'suspendBasket' });

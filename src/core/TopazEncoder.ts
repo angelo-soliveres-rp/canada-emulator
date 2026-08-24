@@ -102,6 +102,23 @@ export class TopazEncoder {
     return `${formatHeaderTime(this.clock())} ${this.registerId} ${body}\n`;
   }
 
+  /**
+   * Age-verification journal line. Two real forms exist (fixtures
+   * liftck_player dev/playbackFiles marlboro/ckgc-2702524-3.xml:5 and
+   * marlboro/Ruby/ckhl-1683-1.xml:5):
+   *   ID CHECK SKIPPED
+   *   CUSTOMER ID VERIFIED  11/22/33
+   *
+   * The player recognizes both only to DISCARD them (TopazMessageParser.ts:287
+   * returns []). That swallow is the point: the line's shape could otherwise
+   * match the item-add regex and be rung up as a phantom item, so emitting it
+   * is how you prove the player still throws it away.
+   */
+  idCheck(args: { verified: boolean; dob?: string }): string {
+    if (!args.verified) return this.frame('ID CHECK SKIPPED');
+    return this.frame(`CUSTOMER ID VERIFIED  ${args.dob ?? '11/22/33'}`);
+  }
+
   /** `CSH: <name>` — cashier recognition. The player reads exactly 17 chars. */
   cashier(name: string): string {
     const clean = name.replace(/[^\x20-\x7E]/g, ' ').slice(0, 17);

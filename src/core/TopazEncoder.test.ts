@@ -33,6 +33,16 @@ describe('TopazEncoder — VJ frames', () => {
     }
   });
 
+  it('idCheck emits the two real age-verification journal forms', () => {
+    // Fixtures: `01/24/18 17:34:58 103 ID CHECK SKIPPED`
+    // (marlboro/ckgc-2702524-3.xml:5) and `CUSTOMER ID VERIFIED  11/22/33`
+    // (marlboro/Ruby/ckhl-1683-1.xml:5).
+    expect(payload(enc.idCheck({ verified: false }))).toContain('ID CHECK SKIPPED');
+    expect(payload(enc.idCheck({ verified: true }))).toContain('CUSTOMER ID VERIFIED');
+    expect(payload(enc.idCheck({ verified: true }))).toContain('11/22/33');
+    expect(payload(enc.idCheck({ verified: true, dob: '01/02/03' }))).toContain('01/02/03');
+  });
+
   it('cashier line reads CSH: plus exactly 17 characters', () => {
     expect(payload(enc.cashier('LAKELEY'))).toBe('CSH: LAKELEY          ');
   });
