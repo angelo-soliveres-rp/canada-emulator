@@ -51,6 +51,44 @@ describe('normalizeScenario', () => {
     }
   });
 
+  it('round-trips a loyalty step with an explicit cardId', () => {
+    const withCardId = {
+      ...minimal,
+      steps: [{ kind: 'act', label: 'EasyPay', action: { kind: 'loyalty', card: '8018782603800034999992', cardId: '70000000009' } }],
+    };
+    const res = normalizeScenario(withCardId);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const step = res.scenario.steps[0];
+    if (step.kind !== 'act') return;
+    expect(step.action).toEqual({ kind: 'loyalty', card: '8018782603800034999992', cardId: '70000000009' });
+    // Absent cardId stays absent rather than becoming an empty string.
+    const bare = normalizeScenario({ ...minimal, steps: [{ kind: 'act', label: 'x', action: { kind: 'loyalty', card: '123' } }] });
+    expect(bare.ok).toBe(true);
+    if (!bare.ok) return;
+    const bareStep = bare.scenario.steps[0];
+    if (bareStep.kind !== 'act') return;
+    expect(bareStep.action).toEqual({ kind: 'loyalty', card: '123' });
+  });
+
+  it('round-trips suspend and resume steps', () => {
+    const res = normalizeScenario({
+      ...minimal,
+      steps: [
+        { kind: 'act', label: 'park', action: { kind: 'suspendBasket' } },
+        { kind: 'act', label: 'recall', action: { kind: 'resumeBasket' } },
+      ],
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.scenario.steps.map((st) => (st.kind === 'act' ? st.action.kind : st.kind))).toEqual([
+      'suspendBasket',
+      'resumeBasket',
+    ]);
+    expect(stepDisplayKind(res.scenario.steps[0])).toBe('SUSPEND');
+    expect(stepDisplayKind(res.scenario.steps[1])).toBe('RESUME');
+  });
+
   it('rejects non-objects and missing names', () => {
     expect(normalizeScenario(null).ok).toBe(false);
     expect(normalizeScenario('nope').ok).toBe(false);

@@ -291,6 +291,8 @@ export function RightRail({ e, locale }: { e: Emu; locale: PosLocale }): JSX.Ele
         </div>
       )}
 
+      {loyaltyActions && <LoyaltyBar e={e} />}
+
       {loyaltyActions && (
         <div className={styles.loyalty}>
           {loyaltyActions.map((a) => (
@@ -383,6 +385,53 @@ function CashierBar({ e }: { e: Emu }): JSX.Element {
           Sign in
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Loyalty / EasyPay card entry. The preset chips below cover the player's
+ * discriminator branches; this is for an arbitrary card — and it is the only
+ * way to set DiscountCardId, which both Radiant6 parsers read
+ * (Radiant6MessageParser.ts:559) but no preset exercises.
+ *
+ * No success indicator on purpose: the wire carries no loyalty result, so
+ * anything green here would be invented. The wire log shows the actual 1024.
+ */
+function LoyaltyBar({ e }: { e: Emu }): JSX.Element {
+  const [card, setCard] = useState('');
+  const [cardId, setCardId] = useState('');
+
+  const trimmedCard = card.trim();
+  const send = (): void => {
+    if (!trimmedCard) return;
+    e.loyalty(trimmedCard, cardId.trim() || undefined);
+  };
+
+  return (
+    <div className={styles.loyaltyForm}>
+      <span className={styles.loyaltyLabel}>LOYALTY</span>
+      <input
+        className={styles.loyaltyCard}
+        value={card}
+        placeholder="card number"
+        spellCheck={false}
+        aria-label="Loyalty card number"
+        onChange={(ev) => setCard(ev.target.value)}
+        onKeyDown={(ev) => ev.key === 'Enter' && send()}
+      />
+      <input
+        className={styles.loyaltyCardId}
+        value={cardId}
+        placeholder="card id"
+        spellCheck={false}
+        aria-label="Loyalty card id (DiscountCardId)"
+        onChange={(ev) => setCardId(ev.target.value)}
+        onKeyDown={(ev) => ev.key === 'Enter' && send()}
+      />
+      <button className={styles.loyaltyGo} disabled={!trimmedCard} onClick={send} title="Send an EasyPay / loyalty sign-in (1024)">
+        Send
+      </button>
     </div>
   );
 }

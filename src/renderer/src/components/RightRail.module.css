@@ -102,6 +102,24 @@
 .gval { font-size: 26px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 500; }
 
 /* ── Loyalty + tender ──────────────────────────────────────────── */
+/* Loyalty / EasyPay free-text entry (card number + optional DiscountCardId). */
+.loyaltyForm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 0 0 auto; }
+.loyaltyLabel { font-size: 9px; font-weight: 600; letter-spacing: .08em; color: var(--text-faint); }
+.loyaltyCard, .loyaltyCardId {
+  min-width: 0; background: var(--surface-2); border: 1px solid var(--border-2);
+  color: var(--text); border-radius: var(--r-md); padding: 5px 7px; font-size: var(--t-xs);
+}
+.loyaltyCard { flex: 3 1 8ch; }
+.loyaltyCardId { flex: 1 1 5ch; }
+.loyaltyCard:focus, .loyaltyCardId:focus { outline: none; border-color: var(--accent); }
+.loyaltyGo {
+  flex: 0 0 auto; cursor: pointer; background: var(--surface-2);
+  border: 1px solid var(--border-2); color: var(--text-muted);
+  border-radius: var(--r-md); padding: 5px 9px; font-size: var(--t-xs); font-weight: 600;
+}
+.loyaltyGo:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.loyaltyGo:disabled { opacity: .4; cursor: default; }
+
 .loyalty { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; flex: 0 0 auto; }
 .loyalty button {
   display: flex; flex-direction: column; align-items: center; gap: 1px; cursor: pointer;

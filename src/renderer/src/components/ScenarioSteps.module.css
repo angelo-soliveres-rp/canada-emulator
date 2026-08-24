@@ -46,6 +46,8 @@
 .kind[data-kind='TRIGGER'] { color: var(--ch-scanner); }
 .kind[data-kind='LOYALTY'] { color: var(--ok); }
 .kind[data-kind='CASHIER'] { color: var(--ch-pole); }
+.kind[data-kind='SUSPEND'] { color: var(--text-muted); }
+.kind[data-kind='RESUME'] { color: var(--text-muted); }
 .kind[data-kind='WAIT'] { color: var(--warn); }
 .kind[data-kind='TENDER'] { color: var(--ch-pole); }
 .kind[data-kind='VOID'],

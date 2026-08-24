@@ -53,6 +53,15 @@ describe('RegisterSession', () => {
     expect(msgs.find((m) => m.data.includes('EventId=1024'))?.data).toContain('DiscountCardNumber=8018782603800034999992');
   });
 
+  it('loyalty carries an explicit DiscountCardId when one is given', () => {
+    const s = new RegisterSession();
+    const line = s.loyalty('8018782603800034999992', '70000000009').find((m) => m.data.includes('EventId=1024'))!.data;
+    expect(line).toContain('DiscountCardId=70000000009');
+    // Omitting it falls back to the legacy fixture default rather than a blank.
+    const fallback = new RegisterSession().loyalty('8018782603800034999992').find((m) => m.data.includes('EventId=1024'))!.data;
+    expect(fallback).toContain('DiscountCardId=70000000001');
+  });
+
   it('loyalty as the first action opens the lane first (1001 + 1009 precede 1024)', () => {
     const s = new RegisterSession();
     const msgs = s.loyalty('8018782603800034999992');

@@ -128,7 +128,8 @@ export function useEmulator(): {
   voidLine: (lineNumber: number) => void;
   setQuantity: (lineNumber: number, qty: number) => void;
   setPrice: (lineNumber: number, priceCents: number) => void;
-  loyalty: (cardNumber: string) => void;
+  /** EasyPay / loyalty sign-in (1024). `cardId` overrides DiscountCardId. */
+  loyalty: (cardNumber: string, cardId?: string) => void;
   /** Sign a cashier in (Radiant6 2010 / Topaz `CSH:`). */
   cashier: (operatorId: string, operatorName: string) => void;
   /** Park the open basket (Radiant6 1003). No-op on Topaz/Bulloch. */
@@ -490,7 +491,7 @@ export function useEmulator(): {
             );
           }
           case 'loyalty':
-            return session.loyalty(action.card);
+            return session.loyalty(action.card, action.cardId);
           case 'cashier':
             return session.cashierChange({ operatorId: action.operatorId, operatorName: action.operatorName });
           case 'suspendBasket':
@@ -723,8 +724,8 @@ export function useEmulator(): {
       setPrice: (lineNumber: number, priceCents: number) => {
         performAction({ kind: 'setPrice', lineNumber, priceCents });
       },
-      loyalty: (cardNumber: string) => {
-        performAction({ kind: 'loyalty', card: cardNumber });
+      loyalty: (cardNumber: string, cardId?: string) => {
+        performAction({ kind: 'loyalty', card: cardNumber, ...(cardId ? { cardId } : {}) });
       },
       cashier: (operatorId: string, operatorName: string) => {
         performAction({ kind: 'cashier', operatorId, operatorName });

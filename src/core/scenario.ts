@@ -23,7 +23,7 @@ export const DEFAULT_WAIT_TIMEOUT_MS = 10_000;
 export type ScenarioAction =
   | { kind: 'ring'; code: string; description?: string; priceCents?: number; quantity?: number }
   | { kind: 'scan'; code: string; description?: string }
-  | { kind: 'loyalty'; card: string }
+  | { kind: 'loyalty'; card: string; cardId?: string }
   | { kind: 'cashier'; operatorId: string; operatorName: string }
   | { kind: 'suspendBasket' }
   | { kind: 'resumeBasket' }
@@ -165,7 +165,8 @@ function parseAction(v: unknown): ScenarioAction | null {
       return { kind: 'scan', code: v.code, description: v.description };
     case 'loyalty':
       if (typeof v.card !== 'string' || !v.card) return null;
-      return { kind: 'loyalty', card: v.card };
+      if (!optionalString(v.cardId)) return null;
+      return { kind: 'loyalty', card: v.card, ...(v.cardId ? { cardId: v.cardId } : {}) };
     case 'cashier':
       if (typeof v.operatorId !== 'string' || !v.operatorId) return null;
       if (typeof v.operatorName !== 'string' || !v.operatorName) return null;
