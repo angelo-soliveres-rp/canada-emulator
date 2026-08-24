@@ -163,6 +163,18 @@ export function orderAds(ads: AdTriggersCompleters[]): AdTriggersCompleters[] {
 }
 
 /** Order manifest entries by name (case-insensitive). */
+/**
+ * Whether a raw ad doc is a real ad rather than a config entry that happens to
+ * live in the same ads collection. Config docs carry a templatename ending in
+ * "Config" ("Beat The Target Config", "Top 5 Promos Config"); a doc with no
+ * templatename at all is not renderable either. Both are evicted from the
+ * manifest so the bench lists only things you can actually trigger.
+ */
+export function isLegitimateAd(ad: RawAdConfig): boolean {
+  const template = (ad.templatename ?? '').trim().toLowerCase();
+  return template !== '' && !template.endsWith('config');
+}
+
 export function orderManifest(ads: AdManifestEntry[]): AdManifestEntry[] {
   return [...ads].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
 }

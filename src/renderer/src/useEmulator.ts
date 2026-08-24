@@ -29,6 +29,7 @@ import { loyaltyCardFromScan } from '../../core/scanProtocol';
 import { quickKeyColor, type QuickKeyColor, type QuickKeyEntry, type QuickKeyFile } from '../../core/quickkeys';
 import {
   extractTriggersCompleters,
+  isLegitimateAd,
   orderManifest,
   type AdTriggersCompleters,
   type AdManifestEntry,
@@ -114,6 +115,12 @@ export function useEmulator(): {
   pricebookDir: string;
   setPricebookDir: (dir: string) => void;
   pricebookStatus: PricebookLoadResult | null;
+  /**
+   * Human-readable name for a UPC: pricebook, then quick keys, then the bare
+   * code. Ad triggers/completers often arrive from the backend without a
+   * description, so the bench would otherwise show a raw barcode.
+   */
+  resolveItemName: (code: string) => string;
   loadPricebook: () => Promise<void>;
   addItem: (item: PricebookItem) => void;
   addCustom: (input: { code: string; description: string; priceCents: number; quantity: number }) => void;
@@ -252,6 +259,13 @@ export function useEmulator(): {
   );
 
   const pricebookCodes = useMemo(() => new Set(pricebookIndex.keys()), [pricebookIndex]);
+
+  // O(1) Map lookup per visible chip — cheap enough to call during render.
+  const resolveItemName = useCallback(
+    (code: string): string =>
+      pricebookIndex.get(code)?.description || quickKeys.find((p) => p.code === code)?.description || code,
+    [pricebookIndex, quickKeys],
+  );
   const quickKeyColorFor = useCallback(
     (upc: string): QuickKeyColor =>
       quickKeyColor(upc, { pricebookLoaded: pricebookEntries.length > 0, pricebookCodes, adCodes }),
@@ -310,7 +324,11 @@ export function useEmulator(): {
 
       // Background-prefetch every ad's triggers/completers (throttled), so the
       // completer dots + template labels fill in without per-page waits.
+      // The manifest can't be filtered up front — only the full doc carries the
+      // templatename that tells a real ad from a config entry — so config ids
+      // are collected here and evicted once the prefetch settles.
       const ids = manifest.map((m) => m.id);
+      const configIds = new Set<string>();
       let next = 0;
       const worker = async (): Promise<void> => {
         while (next < ids.length && adsRunRef.current === run) {
@@ -319,6 +337,10 @@ export function useEmulator(): {
             const r = await window.emulator.loadAdDetail({ ...req, id });
             if (adsRunRef.current !== run) return;
             if (r.ok && r.ad) {
+              if (!isLegitimateAd(r.ad)) {
+                configIds.add(id);
+                continue;
+              }
               const detail = extractTriggersCompleters(r.ad);
               setAdDetails((prev) => (prev[id] ? prev : { ...prev, [id]: detail }));
             }
@@ -328,7 +350,14 @@ export function useEmulator(): {
         }
       };
       await Promise.all(Array.from({ length: 5 }, () => worker()));
-      if (adsRunRef.current === run) logSys(`Ad details loaded (${manifest.length})`);
+      if (adsRunRef.current === run) {
+        if (configIds.size > 0) {
+          setAdManifest((prev) => prev.filter((m) => !configIds.has(m.id)));
+          logSys(`Ad details loaded — evicted ${configIds.size} config entry(s), kept ${manifest.length - configIds.size} ad(s)`);
+        } else {
+          logSys(`Ad details loaded (${manifest.length})`);
+        }
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setAdsStatus({ loading: false, error: msg });
@@ -350,6 +379,11 @@ export function useEmulator(): {
         });
         if (!res.ok || !res.ad) {
           logSys(`Ad detail error (${id}): ${res.error}`);
+          return null;
+        }
+        if (!isLegitimateAd(res.ad)) {
+          setAdManifest((prev) => prev.filter((m) => m.id !== id));
+          logSys(`Evicted config entry "${id}" from the ads list (not a real ad)`);
           return null;
         }
         const detail = extractTriggersCompleters(res.ad);
@@ -661,6 +695,7 @@ export function useEmulator(): {
       pricebookDir,
       setPricebookDir,
       pricebookStatus,
+      resolveItemName,
       loadPricebook,
       addItem: (item: PricebookItem) => {
         performAction({ kind: 'ring', code: item.code, description: item.description, priceCents: item.priceCents });
@@ -728,6 +763,7 @@ export function useEmulator(): {
       pricebookDir,
       setPricebookDir,
       pricebookStatus,
+      resolveItemName,
       loadPricebook,
       pricebookIndex,
       registerPlayer,

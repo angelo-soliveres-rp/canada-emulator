@@ -167,6 +167,7 @@ export function Bench({ e }: { e: Emu }): JSX.Element {
             bench={bench}
             lastRunAt={bench.lastRun[ad.id]}
             onScan={(code, description) => e.scan(code, description)}
+            resolveName={e.resolveItemName}
           />
         ))}
       </div>
@@ -188,6 +189,7 @@ function AdCard({
   bench,
   lastRunAt,
   onScan,
+  resolveName,
 }: {
   ad: BenchAd;
   index: number;
@@ -195,6 +197,8 @@ function AdCard({
   bench: BenchController;
   lastRunAt: number | undefined;
   onScan: (code: string, description?: string) => void;
+  /** UPC -> pricebook/quick-key name, so a nameless trigger isn't a bare barcode. */
+  resolveName: (code: string) => string;
 }): JSX.Element {
   const run = bench.run;
   const active = run?.adId === ad.id;
@@ -222,7 +226,7 @@ function AdCard({
         title={`Scan trigger ${t.code}`}
         onClick={(ev) => fireTrigger(t, ev)}
       >
-        {fired ? '✓ ' : ''}{t.description || t.code}
+        {fired ? '✓ ' : ''}{t.description || resolveName(t.code)}
       </button>
     );
   });
@@ -234,7 +238,7 @@ function AdCard({
       title={`Scan completer ${c.code}`}
       onClick={(ev) => fireCompleter(c, ev)}
     >
-      {active && i === 0 ? '↵ ' : ''}{c.description || c.code}
+      {active && i === 0 ? '↵ ' : ''}{c.description || resolveName(c.code)}
     </button>
   ));
 

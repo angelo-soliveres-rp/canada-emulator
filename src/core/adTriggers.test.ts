@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   extractTriggersCompleters,
+  isLegitimateAd,
   orderAds,
   isInteractiveTemplate,
   type AdTriggersCompleters,
@@ -99,5 +100,27 @@ describe('orderAds', () => {
     ];
     expect(orderAds(input).map((a) => a.name)).toEqual(['7up points', 'Cashew', 'ckmw Amp']);
     expect(input[0].name).toBe('ckmw Amp'); // original order preserved
+  });
+});
+
+describe('isLegitimateAd', () => {
+  it('rejects config entries stored in the ads collection', () => {
+    // The ads collection also holds config docs whose templatename ends in
+    // "Config" (Beat The Target Config, Top 5 Promos Config…). They are not ads.
+    expect(isLegitimateAd({ templatename: 'Beat The Target Config' })).toBe(false);
+    expect(isLegitimateAd({ templatename: 'Top 5 Promos Config' })).toBe(false);
+    expect(isLegitimateAd({ templatename: '  config  ' })).toBe(false);
+  });
+
+  it('rejects a doc with no templatename at all', () => {
+    expect(isLegitimateAd({})).toBe(false);
+    expect(isLegitimateAd({ templatename: '' })).toBe(false);
+    expect(isLegitimateAd({ templatename: '   ' })).toBe(false);
+  });
+
+  it('keeps real ads, including templates that merely contain "config"', () => {
+    expect(isLegitimateAd({ templatename: 'Basket Offer' })).toBe(true);
+    expect(isLegitimateAd({ templatename: '2 Or 3 For' })).toBe(true);
+    expect(isLegitimateAd({ templatename: 'Configurable Combo' })).toBe(true);
   });
 });
