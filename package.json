@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
+    "serve:player": "node scripts/serve-loa-player.mjs",
     "start": "electron-vite preview",
     "build:web": "vite build --config vite.web.config.ts",
     "dev:web": "concurrently -n ui,server -c cyan,magenta \"vite --config vite.web.config.ts\" \"tsx watch src/server/index.ts\"",
