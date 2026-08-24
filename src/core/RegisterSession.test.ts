@@ -541,3 +541,98 @@ describe('RegisterSession — verifone (Topaz plaintext VJ + non-authoritative p
     expect(s.locale).toBe('en');
   });
 });
+
+describe('RegisterSession — LOA mode (NGRP order documents)', () => {
+  const loa = (): RegisterSession =>
+    new RegisterSession({ registerType: 'loa-player', taxRateBps: 0, storeCode: 'AB123', orderUuidGen: () => 'UUID1' });
+
+  const docs = (messages: WireMessage[]): Record<string, unknown>[] =>
+    messages.filter((m) => m.channel === 'loa').map((m) => JSON.parse(m.data) as Record<string, unknown>);
+
+  const order = (messages: WireMessage[]): Record<string, unknown> =>
+    (docs(messages).at(-1)!.order as Record<string, unknown>);
+
+  it('emits exactly one loa document per action — never a POS wire event', () => {
+    const s = loa();
+    const msgs = s.addItem({ code: '049000000443', description: 'Coke', priceCents: 229 });
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].channel).toBe('loa');
+    // No socket channels at all: LOA is postMessage-only.
+    expect(msgs.every((m) => m.channel === 'loa')).toBe(true);
+  });
+
+  it('sends full state on every change, not a delta', () => {
+    const s = loa();
+    s.addItem({ code: 'a', description: 'A', priceCents: 100 });
+    const second = order(s.addItem({ code: 'b', description: 'B', priceCents: 200 }));
+    // The second document still carries the FIRST line — declarative sync.
+    expect((second.itemLines as unknown[]).length).toBe(2);
+    expect(second.subtotal).toBe(3);
+    expect(second.total).toBe(3);
+  });
+
+  it('money is dollars on the wire, not the integer cents the basket holds', () => {
+    const o = order(loa().addItem({ code: 'a', description: 'A', priceCents: 229 }));
+    expect(o.subtotal).toBe(2.29);
+    expect((o.itemLines as Array<{ amount: number }>)[0].amount).toBe(2.29);
+  });
+
+  it('status tracks the sale: OPEN, CANCELED on void, TENDERED on tender', () => {
+    const s = loa();
+    expect(order(s.addItem({ code: 'a', description: 'A', priceCents: 100 })).status).toBe('OPEN');
+    expect(order(s.voidTicket()).status).toBe('CANCELED');
+    const t = loa();
+    t.addItem({ code: 'a', description: 'A', priceCents: 100 });
+    expect(order(t.tender('cash-exact')).status).toBe('TENDERED');
+  });
+
+  it('voiding every line reads as a cancelled order', () => {
+    const s = loa();
+    s.addItem({ code: 'a', description: 'A', priceCents: 100 });
+    expect(order(s.voidLine(1)).status).toBe('CANCELED');
+    const two = loa();
+    two.addItem({ code: 'a', description: 'A', priceCents: 100 });
+    two.addItem({ code: 'b', description: 'B', priceCents: 100 });
+    expect(order(two.voidLine(1)).status).toBe('OPEN');
+  });
+
+  it('loyalty attaches a customer block instead of emitting an event', () => {
+    const s = loa();
+    s.addItem({ code: 'a', description: 'A', priceCents: 100 });
+    const o = order(s.loyalty('8018782603800034999992'));
+    expect(o.customer).toEqual({ brierleyId: '', mobileNumber: '', oktaId: '', loyaltyCard: '8018782603800034999992' });
+  });
+
+  it('a completed sale starts a new order uuid and drops the signed-in customer', () => {
+    let n = 0;
+    const s = new RegisterSession({
+      registerType: 'loa-player',
+      taxRateBps: 0,
+      orderUuidGen: () => `UUID${++n}`,
+    });
+    s.addItem({ code: 'a', description: 'A', priceCents: 100 });
+    s.loyalty('8018782603800034999992');
+    expect(order(s.tender('cash-exact')).uuid).toBe('UUID1');
+    const next = order(s.addItem({ code: 'b', description: 'B', priceCents: 100 }));
+    expect(next.uuid).toBe('UUID2');
+    expect(next.customer).toBeUndefined();
+  });
+
+  it('cashier, age-verify and suspend/resume have no NGRP representation', () => {
+    const s = loa();
+    s.addItem({ code: 'a', description: 'A', priceCents: 100 });
+    expect(s.cashierChange({ operatorId: '1', operatorName: 'B' })).toEqual([]);
+    expect(s.ageVerify({ verified: true })).toEqual([]);
+    expect(s.suspendBasket()).toEqual([]);
+    expect(s.resumeBasket()).toEqual([]);
+  });
+
+  it('stamps the store id and register column on the document', () => {
+    const msgs = loa().addItem({ code: 'a', description: 'A', priceCents: 100 });
+    const doc = docs(msgs)[0];
+    expect(doc.storeId).toBe('AB123');
+    expect(doc.reportLocation).toBe('AB123');
+    expect((doc.store as { id: string }).id).toBe('AB123');
+    expect(order(msgs).registerId).toBe('0501');
+  });
+});

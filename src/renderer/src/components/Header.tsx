@@ -3,6 +3,7 @@ import {
   REGISTER_TYPES,
   portsForRegisterType,
   channelsForRegisterType,
+  isLoaRegisterType,
   isUsRegisterType,
   type Channel,
   type ConnState,
@@ -36,9 +37,23 @@ const OVERALL_LABEL: Record<Overall, string> = {
   offline: 'OFFLINE',
 };
 
-function StatusPill({ status, config }: { status: Status; config: Emu['config'] }): JSX.Element {
+function StatusPill({
+  status,
+  config,
+  loaConnected,
+}: {
+  status: Status;
+  config: Emu['config'];
+  loaConnected: boolean;
+}): JSX.Element {
   const channels = channelsForRegisterType(config.registerType);
-  const overall = overallState(channels.map((ch) => status[ch]));
+  // LOA opens no sockets, so its channel list is empty — and overallState([])
+  // would read LIVE forever. The iframe being mounted is the real signal.
+  const overall = isLoaRegisterType(config.registerType)
+    ? loaConnected
+      ? 'live'
+      : 'offline'
+    : overallState(channels.map((ch) => status[ch]));
   return (
     <span className={`${styles.pill} ${styles[overall]}`}>
       <span className={styles.pulsedot} />
@@ -50,6 +65,7 @@ function StatusPill({ status, config }: { status: Status; config: Emu['config'] 
 /** Port chips collapsed into one mono string; per-channel detail lives in the title. */
 function PortSummary({ status, config }: { status: Status; config: Emu['config'] }): JSX.Element {
   const channels = channelsForRegisterType(config.registerType);
+  if (isLoaRegisterType(config.registerType)) return <span className={styles.ports}>postMessage — no sockets</span>;
   const text = channels.map((ch) => `${CHANNEL_INFO[ch].label} :${CHANNEL_INFO[ch].port(config)}`).join(' · ');
   const title = channels
     .map((ch) => `${CHANNEL_INFO[ch].title} :${CHANNEL_INFO[ch].port(config)} — ${status[ch]}`)
@@ -82,7 +98,7 @@ export function Header({
       <span className={styles.mark} aria-hidden="true" />
       <b className={styles.word}>EMULATOR</b>
 
-      <StatusPill status={e.status} config={e.config} />
+      <StatusPill status={e.status} config={e.config} loaConnected={e.loaConnected} />
       <PortSummary status={e.status} config={e.config} />
 
       <div className={styles.mode} role="radiogroup" aria-label="Mode">

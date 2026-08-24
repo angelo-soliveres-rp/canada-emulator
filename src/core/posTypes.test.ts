@@ -7,6 +7,9 @@ import {
   portsForRegisterType,
   channelsForRegisterType,
   isUsRegisterType,
+  isLoaRegisterType,
+  loaEntryUrl,
+  LOA_PLAYER_ENTRY_URL,
   lolConfigForLane,
   normalizeLolLane,
   normalizeLolPreset,
@@ -65,7 +68,7 @@ describe('register types & ports', () => {
   });
 
   it('lists the register types with labels', () => {
-    expect(REGISTER_TYPES.map((r) => r.value)).toEqual(['radiant6-canada', 'bulloch', 'radiant6-us', 'verifone']);
+    expect(REGISTER_TYPES.map((r) => r.value)).toEqual(['radiant6-canada', 'bulloch', 'radiant6-us', 'verifone', 'loa-player']);
     expect(REGISTER_TYPES.find((r) => r.value === 'bulloch')?.label).toBe('Bulloch');
     expect(REGISTER_TYPES.find((r) => r.value === 'radiant6-us')?.label).toBe('Radiant6 US');
     expect(REGISTER_TYPES.find((r) => r.value === 'verifone')?.label).toBe('Verifone Topaz');
@@ -138,5 +141,29 @@ describe('normalizePosConfig (persisted connection restore)', () => {
         registerType: 'ncr-9000' as unknown as RegisterType,
       }),
     ).toEqual(DEFAULT_POS_CONFIG);
+  });
+});
+
+describe('LOA mode', () => {
+  it('opens no channels — it talks to an iframe, not a socket', () => {
+    expect(channelsForRegisterType('loa-player')).toEqual([]);
+    expect(isLoaRegisterType('loa-player')).toBe(true);
+    for (const t of ['radiant6-canada', 'bulloch', 'radiant6-us', 'verifone'] as const) {
+      expect(isLoaRegisterType(t)).toBe(false);
+    }
+  });
+
+  it('is not a US register family (no en-US/cents-exact machinery applies)', () => {
+    expect(isUsRegisterType('loa-player')).toBe(false);
+  });
+
+  it('loaEntryUrl passes the player key in the hash, and omits it when blank', () => {
+    expect(loaEntryUrl('abc-123', 'http://localhost:9000/index.html')).toBe(
+      'http://localhost:9000/index.html#playerKey=abc-123',
+    );
+    // A blank key yields the bare URL: the player then boots on a default config
+    // and will not consume our order documents.
+    expect(loaEntryUrl('   ', 'http://localhost:9000/index.html')).toBe('http://localhost:9000/index.html');
+    expect(loaEntryUrl('k')).toBe(`${LOA_PLAYER_ENTRY_URL}#playerKey=k`);
   });
 });

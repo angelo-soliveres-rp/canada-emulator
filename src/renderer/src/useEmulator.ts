@@ -10,6 +10,7 @@ import {
   lolConfigForLane,
   channelsForRegisterType,
   isUsRegisterType,
+  isLoaRegisterType,
   type LolPreset,
   type PosConfig,
   type PlayerConfig,
@@ -35,6 +36,7 @@ import {
   type AdManifestEntry,
 } from '../../core/adTriggers';
 import { assertNever } from '../../core/assertNever';
+import { loaTransport } from './loaTransport';
 import type { ScenarioAction } from '../../core/scenario';
 import type { ObservedLine } from '../../core/scenarioEngine';
 
@@ -99,6 +101,11 @@ export function useEmulator(): {
   globalInitError: string | null;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
+  /**
+   * LOA mode only: whether the embedded player iframe is mounted. LOA opens no
+   * sockets, so `status` stays disconnected and this is the real signal.
+   */
+  loaConnected: boolean;
   log: LogEntry[];
   clearLog: () => void;
   setLocale: (l: PosLocale) => void;
@@ -215,6 +222,8 @@ export function useEmulator(): {
   });
   const [log, setLog] = useState<LogEntry[]>([]);
   const logId = useRef(0);
+  // LOA mode has no sockets — 'connected' just means the iframe is mounted.
+  const [loaConnected, setLoaConnected] = useState(false);
 
   // When the register type switches the session is rebuilt (new wire protocol);
   // reset the basket view to match the fresh, empty lane.
@@ -436,11 +445,19 @@ export function useEmulator(): {
     (messages: WireMessage[]) => {
       const entries: LogEntry[] = [];
       for (const m of messages) {
-        // send() rejects on RPC timeout / queue overflow / closed WebSocket —
-        // surface it instead of leaving an unhandled rejection.
-        window.emulator.send(m.channel, m.data).catch((err: unknown) => {
-          logSys(`Send failed on ${m.channel}: ${err instanceof Error ? err.message : String(err)}`);
-        });
+        if (m.channel === 'loa') {
+          // LOA has no socket: the NGRP document goes to the embedded player
+          // over postMessage. A missing/unloaded iframe is the only failure.
+          if (!loaTransport.send(m.data)) {
+            logSys('LOA send failed: the embedded player frame is not loaded yet.');
+          }
+        } else {
+          // send() rejects on RPC timeout / queue overflow / closed WebSocket —
+          // surface it instead of leaving an unhandled rejection.
+          window.emulator.send(m.channel, m.data).catch((err: unknown) => {
+            logSys(`Send failed on ${m.channel}: ${err instanceof Error ? err.message : String(err)}`);
+          });
+        }
         entries.push({
           id: logId.current++,
           channel: m.channel,
@@ -590,7 +607,53 @@ export function useEmulator(): {
     });
   }, [pricebookIndex, quickKeys, session, dispatch, logSys, config.registerType]);
 
+  // LOA reverse channel: the embedded player pushes completers over postMessage
+  // instead of the TCP scanner feed. Route them through the SAME ring-up path so
+  // a LOA completer behaves exactly like a scanned one (pricebook resolve, 1011
+  // equivalent, recorder notification).
+  useEffect(() => {
+    if (!isLoaRegisterType(config.registerType)) return;
+    return loaTransport.onInject((cmd) => {
+      const hit = pricebookIndex.get(cmd.barcode) ?? quickKeys.find((p) => p.code === cmd.barcode);
+      const item = hit
+        ? { code: hit.code, description: hit.description, priceCents: hit.priceCents, quantity: cmd.quantity }
+        : { code: cmd.barcode, description: `UPC ${cmd.barcode}`, priceCents: 100, quantity: cmd.quantity };
+      logSys(`LOA completer inject: ${cmd.barcode} x${cmd.quantity} -> ${item.description}`);
+      const messages = session.addItem(item);
+      dispatch(messages);
+      for (const cb of [...injectSubsRef.current]) {
+        cb({ barcode: cmd.barcode, quantity: cmd.quantity, lines: messages.map((m) => ({ channel: m.channel, text: m.data })), at: Date.now() });
+      }
+      setInjectSeq((n) => n + 1);
+    });
+  }, [config.registerType, pricebookIndex, quickKeys, session, dispatch, logSys]);
+
+  // Mirror every postMessage in/out onto the wire log, so LOA traffic is as
+  // visible as socket traffic.
+  useEffect(() => {
+    if (!isLoaRegisterType(config.registerType)) return;
+    return loaTransport.onLog((direction, name, detailJson) => {
+      setLog((prev) =>
+        [
+          {
+            id: logId.current++,
+            channel: 'loa' as const,
+            text: `${direction === 'out' ? '->' : '<-'} ${name} ${detailJson}`,
+            at: new Date().toLocaleTimeString(),
+          },
+          ...prev,
+        ].slice(0, 300),
+      );
+    });
+  }, [config.registerType]);
+
   const connect = useCallback(async () => {
+    if (isLoaRegisterType(config.registerType)) {
+      // Nothing to dial: mounting the iframe IS the connection.
+      setLoaConnected(true);
+      logSys('LOA mode: loading the embedded player…');
+      return;
+    }
     const ports: Record<string, number> = { vj: config.vjPort, pole: config.polePort, scanner: config.scannerPort };
     const summary = channelsForRegisterType(config.registerType)
       .map((ch) => `${ch} ${ports[ch]}`)
@@ -601,10 +664,16 @@ export function useEmulator(): {
   }, [config, logSys]);
 
   const disconnect = useCallback(async () => {
+    if (isLoaRegisterType(config.registerType)) {
+      // Unmounting the frame tears the player down, so a re-Connect re-boots it.
+      setLoaConnected(false);
+      logSys('LOA mode: unloading the embedded player.');
+      return;
+    }
     logSys('Disconnecting…');
     const s = await window.emulator.disconnect();
     setStatus(s);
-  }, [logSys]);
+  }, [config.registerType, logSys]);
 
   const setLocale = useCallback(
     (l: PosLocale) => {
@@ -715,6 +784,7 @@ export function useEmulator(): {
       globalInitError,
       connect,
       disconnect,
+      loaConnected,
       log,
       clearLog: () => setLog([]),
       setLocale,
@@ -803,6 +873,7 @@ export function useEmulator(): {
       log,
       connect,
       disconnect,
+      loaConnected,
       dispatch,
       setLocale,
       session,

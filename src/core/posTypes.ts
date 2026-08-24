@@ -9,12 +9,42 @@ export type Channel = 'vj' | 'pole' | 'scanner';
 export type ConnState = 'connected' | 'connecting' | 'disconnected';
 export type Status = Record<Channel, ConnState>;
 
+/**
+ * Channels a WireMessage can target. The TCP transport only knows the hardware
+ * `Channel`s; `loa` is a renderer-only pseudo-channel whose payload is an NGRP
+ * order-document JSON string handed to the embedded loa-player over
+ * cross-origin postMessage (LOA mode) — never over a socket.
+ */
+export type WireChannel = Channel | 'loa';
+
+/** Entry URL of the embedded loa-player (LOA mode); serve the player there first. */
+export const LOA_PLAYER_ENTRY_URL = 'http://localhost:9000/index.html';
+
+/**
+ * Build the embedded loa-player URL, passing the player key in the hash
+ * (`#playerKey=…`) so it boots as that registered player and resolves its own
+ * tenant, settings and station. An empty key yields the bare URL — the player
+ * then boots on a default config and will not consume our order documents.
+ */
+export function loaEntryUrl(playerKey: string, baseUrl: string = LOA_PLAYER_ENTRY_URL): string {
+  const key = playerKey.trim();
+  return key ? `${baseUrl}#playerKey=${key}` : baseUrl;
+}
+
 /** POS register types — each listens on its own VJ/pole/scanner ports. */
-export type RegisterType = 'radiant6-canada' | 'bulloch' | 'radiant6-us' | 'verifone';
+export type RegisterType = 'radiant6-canada' | 'bulloch' | 'radiant6-us' | 'verifone' | 'loa-player';
 
 /** US register families — monolingual en-US, cents-exact, no fr machinery. */
 export function isUsRegisterType(type: RegisterType): boolean {
   return type === 'radiant6-us' || type === 'verifone';
+}
+
+/**
+ * LOA mode drives an embedded player over postMessage instead of TCP, so it
+ * opens no sockets and its "connection" is the iframe being loaded.
+ */
+export function isLoaRegisterType(type: RegisterType): boolean {
+  return type === 'loa-player';
 }
 
 /**
@@ -38,6 +68,8 @@ export const REGISTER_TYPES: ReadonlyArray<{
   { value: 'bulloch', label: 'Bulloch', vjPort: 5438, polePort: 5440, scannerPort: 10000 },
   { value: 'radiant6-us', label: 'Radiant6 US', vjPort: 5438, polePort: 5439, scannerPort: 10000 },
   { value: 'verifone', label: 'Verifone Topaz', vjPort: 10002, polePort: 10001, scannerPort: 10000 },
+  // LOA has no sockets at all — the ports are placeholders so the row shape holds.
+  { value: 'loa-player', label: 'LOA (loa-player)', vjPort: 0, polePort: 0, scannerPort: 0 },
 ];
 
 /** Look up the VJ/pole/scanner ports for a register type. */
@@ -58,6 +90,8 @@ export function portsForRegisterType(
  *                      but non-authoritative) + scanner (completer injects)
  */
 export function channelsForRegisterType(type: RegisterType): Channel[] {
+  // LOA talks to an iframe, not a socket, so there is nothing to connect.
+  if (type === 'loa-player') return [];
   if (type === 'bulloch') return ['pole'];
   if (type === 'radiant6-us') return ['vj', 'scanner'];
   if (type === 'verifone') return ['vj', 'pole', 'scanner'];

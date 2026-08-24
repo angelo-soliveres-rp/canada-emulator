@@ -10,7 +10,7 @@
  * Pure / browser-safe; everything here is JSON-serializable so scenarios can
  * be persisted, exported and imported.
  */
-import { REGISTER_TYPES, type Channel, type RegisterType } from './posTypes';
+import { REGISTER_TYPES, type WireChannel, type RegisterType } from './posTypes';
 import type { PosLocale } from './currency';
 import type { TenderKind } from './RegisterSession';
 
@@ -40,7 +40,7 @@ export type ScenarioAction =
  * (plaintext Topaz / pole / Bulloch). Both must hold when both are present.
  */
 export interface WireExpectation {
-  channel?: Channel;
+  channel?: WireChannel;
   includes?: string[];
   fields?: Record<string, string>;
 }
@@ -142,7 +142,7 @@ export function stepDisplayKind(step: ScenarioStep): StepDisplayKind {
 export type ScenarioParseResult = { ok: true; scenario: Scenario } | { ok: false; error: string };
 
 const REGISTER_TYPE_VALUES = new Set<string>(REGISTER_TYPES.map((r) => r.value));
-const CHANNELS = new Set<string>(['vj', 'pole', 'scanner']);
+const CHANNELS = new Set<string>(['vj', 'pole', 'scanner', 'loa']);
 const TENDER_KINDS = new Set<string>(['cash-exact', 'next-dollar', 'amount']);
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -214,7 +214,7 @@ function parseExpectations(v: unknown): WireExpectation[] | undefined | null {
     const exp: WireExpectation = {};
     if (raw.channel !== undefined) {
       if (typeof raw.channel !== 'string' || !CHANNELS.has(raw.channel)) return null;
-      exp.channel = raw.channel as Channel;
+      exp.channel = raw.channel as WireChannel;
     }
     if (raw.includes !== undefined) {
       if (!Array.isArray(raw.includes) || raw.includes.some((s) => typeof s !== 'string')) return null;

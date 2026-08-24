@@ -3,6 +3,7 @@ import { useEmulator } from './useEmulator';
 import { Header, type UiMode } from './components/Header';
 import { SetupDrawer } from './components/SetupDrawer';
 import { Bench } from './components/Bench';
+import { LoaFrame } from './components/LoaFrame';
 import { RightRail } from './components/RightRail';
 import { LogDock } from './components/LogDock';
 import { ScenarioPanel } from './components/ScenarioPanel';
@@ -107,7 +108,13 @@ function App(): JSX.Element {
 
       {mode === 'manual' ? (
         <div className={styles.body}>
-          <Bench e={e} />
+          {/* LOA drives an embedded player instead of ads-over-a-socket, so the
+              bench column becomes the player itself. */}
+          {e.config.registerType === 'loa-player' ? (
+            <LoaFrame playerKey={e.playerConfig.playerKey} connected={e.loaConnected} />
+          ) : (
+            <Bench e={e} />
+          )}
           <RightRail e={e} locale={e.snapshot.locale} />
         </div>
       ) : (

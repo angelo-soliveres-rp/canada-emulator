@@ -17,12 +17,33 @@ import { TopazEncoder } from './TopazEncoder';
 import { BullochEncoder } from './BullochEncoder';
 import { assertNever } from './assertNever';
 import { isUsRegisterType } from './posTypes';
-import type { Channel, RegisterType } from './posTypes';
+import { buildOrderDoc, type NgrpStatus, type NgrpCustomer } from './NgrpEncoder';
+import type { WireChannel, RegisterType } from './posTypes';
 import type { PosLocale } from './currency';
 
 export interface WireMessage {
-  channel: Channel;
+  channel: WireChannel;
   data: string;
+}
+
+const BASE62_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+
+/**
+ * Default LOA order-uuid generator: base62 of a random 128-bit value, the shape
+ * the reference emulator's CharsetUtils.generateRandomUuidBase62() produces. A
+ * hyphenated hex uuid would break reporting's ascii85 conversion downstream.
+ * Injectable via RegisterSessionOptions.orderUuidGen for deterministic tests.
+ */
+function defaultOrderUuidGen(): string {
+  let hex = '';
+  for (let i = 0; i < 32; i += 1) hex += Math.floor(Math.random() * 16).toString(16);
+  let quotient = BigInt(`0x${hex}`);
+  let out = '';
+  while (quotient > 0n) {
+    out = BASE62_CHARS.charAt(Number(quotient % 62n)) + out;
+    quotient = quotient / 62n;
+  }
+  return out || '0';
 }
 
 export interface AddItemInput {
@@ -66,6 +87,10 @@ export interface RegisterSessionOptions {
   clock?: () => Date;
   /** Wire protocol family (default 'radiant6-canada'). */
   registerType?: RegisterType;
+  /** LOA order storeId stamped on every NGRP document. */
+  storeCode?: string;
+  /** Order-uuid generator for LOA mode. Defaults to a random base62 uuid. */
+  orderUuidGen?: () => string;
 }
 
 export class RegisterSession {
@@ -84,6 +109,12 @@ export class RegisterSession {
   /** Transaction parked by suspendBasket(), awaiting a resume. */
   private suspendedTx: number | undefined;
   locale: PosLocale = 'en';
+  private readonly storeCode: string;
+  private readonly orderUuidGen: () => string;
+  /** LOA mode: order uuid for the in-flight basket, regenerated per sale. */
+  private orderUuid: string;
+  /** LOA mode: signed-in loyalty customer; cleared when the sale resets. */
+  private loaCustomer: NgrpCustomer | null = null;
 
   constructor(options: RegisterSessionOptions = {}) {
     this.encoder = new Radiant6CanadaEncoder({
@@ -104,7 +135,26 @@ export class RegisterSession {
     this.operatorId = options.operatorId ?? '12599';
     this.operatorName = options.operatorName ?? 'Timothy';
     this.tx = options.startTx ?? 1;
+    this.storeCode = options.storeCode ?? 'AB123';
+    this.orderUuidGen = options.orderUuidGen ?? defaultOrderUuidGen;
+    this.orderUuid = this.orderUuidGen();
     this.basket = new Basket({ taxRateBps: this.taxRateBps });
+  }
+
+  /**
+   * The single `loa`-channel message: the whole NGRP order document for the
+   * current basket. LOA is declarative — the player is sent full state on every
+   * change rather than the incremental events the POS wires carry — so one
+   * document replaces whatever the other families would have emitted.
+   */
+  private loaMessage(status: NgrpStatus): WireMessage {
+    const doc = buildOrderDoc(this.snapshot(), {
+      uuid: this.orderUuid,
+      storeId: this.storeCode,
+      status,
+      ...(this.loaCustomer ? { customer: this.loaCustomer } : {}),
+    });
+    return { channel: 'loa', data: JSON.stringify(doc) };
   }
 
   /** A Bulloch `[C110]` item-add line carrying the running basket totals. */
@@ -188,6 +238,9 @@ export class RegisterSession {
     this.basket = new Basket({ taxRateBps: this.taxRateBps });
     this.tx += 1;
     this.started = false;
+    // A new sale is a new LOA order, and the shopper is no longer signed in.
+    this.orderUuid = this.orderUuidGen();
+    this.loaCustomer = null;
   }
 
   /** Open the lane if not already open (idempotent). Returns any open messages. */
@@ -213,6 +266,9 @@ export class RegisterSession {
           { channel: 'vj', data: this.encoder.basketStarted({ tx: this.tx }) },
           this.balanceMessage(),
         ];
+      case 'loa-player':
+        // Declarative: the lane 'opens' by handing the player the empty order.
+        return [this.loaMessage('OPEN')];
       default:
         return assertNever(this.registerType);
     }
@@ -226,7 +282,14 @@ export class RegisterSession {
    * its own EventTime.
    */
   private emit(build: () => WireMessage[]): WireMessage[] {
-    return [...this.ensureStarted(), ...build()];
+    const preamble = this.ensureStarted();
+    const own = build();
+    // LOA is declarative: the action's own document already describes the whole
+    // open lane, so keeping the lane-open document too would flash an empty
+    // basket at the player before the real one. Run ensureStarted for its state
+    // change, discard its message.
+    if (this.registerType === 'loa-player') return own;
+    return [...preamble, ...own];
   }
 
   open(): WireMessage[] {
@@ -255,6 +318,9 @@ export class RegisterSession {
         return [{ channel: 'vj', data: this.topaz.cashier(args.operatorName) }];
       case 'radiant6-canada':
         return [{ channel: 'vj', data: this.encoder.signOn(args) }];
+      case 'loa-player':
+        // The NGRP order document carries no operator — LOA has no cashier identity.
+        return [];
       default:
         return assertNever(this.registerType);
     }
@@ -275,6 +341,8 @@ export class RegisterSession {
         return [];
       case 'verifone':
         return this.emit(() => [{ channel: 'vj', data: this.topaz.idCheck(args) }]);
+      case 'loa-player':
+        return [];
       default:
         return assertNever(this.registerType);
     }
@@ -305,6 +373,9 @@ export class RegisterSession {
         this.suspendedTx = suspended;
         return [{ channel: 'vj', data }];
       }
+      case 'loa-player':
+        // NGRP has no suspend/recall: the document is the whole state.
+        return [];
       default:
         return assertNever(this.registerType);
     }
@@ -342,6 +413,8 @@ export class RegisterSession {
           },
         ];
       }
+      case 'loa-player':
+        return [];
       default:
         return assertNever(this.registerType);
     }
@@ -391,6 +464,8 @@ export class RegisterSession {
             { channel: 'pole', data: this.encoder.poleItem(li.quantity, li.description, li.unitPriceCents, this.locale) },
             this.balanceMessage(),
           ];
+        case 'loa-player':
+          return [this.loaMessage('OPEN')];
         default:
           return assertNever(this.registerType);
       }
@@ -427,6 +502,9 @@ export class RegisterSession {
             { channel: 'vj', data: this.encoder.itemVoid({ tx: this.tx, lineNumber }) },
             this.balanceMessage(),
           ];
+        case 'loa-player':
+          // A basket whose every line is voided reads as a cancelled order.
+          return [this.loaMessage(this.basket.lineItems().every((l) => l.voided) ? 'CANCELED' : 'OPEN')];
         default:
           return assertNever(this.registerType);
       }
@@ -467,6 +545,8 @@ export class RegisterSession {
             { channel: 'vj', data: this.encoder.qtyChange({ tx: this.tx, lineNumber, oldQuantity, newQuantity: quantity, extendedPriceCents: extended, locale: this.locale }) },
             this.balanceMessage(),
           ];
+        case 'loa-player':
+          return [this.loaMessage('OPEN')];
         default:
           return assertNever(this.registerType);
       }
@@ -505,6 +585,8 @@ export class RegisterSession {
             { channel: 'vj', data: this.encoder.priceOverride({ tx: this.tx, lineNumber, newUnitPriceCents: priceCents, locale: this.locale }) },
             this.balanceMessage(),
           ];
+        case 'loa-player':
+          return [this.loaMessage('OPEN')];
         default:
           return assertNever(this.registerType);
       }
@@ -535,6 +617,8 @@ export class RegisterSession {
             ];
           case 'radiant6-canada':
             return [{ channel: 'vj', data: this.encoder.basketEnd({ tx: this.tx, type: 'Sales', completion: 'Cancelled' }) }];
+        case 'loa-player':
+          return [this.loaMessage('CANCELED')];
           default:
             return assertNever(this.registerType);
         }
@@ -561,6 +645,10 @@ export class RegisterSession {
         return this.emit(() => [{ channel: 'vj', data: this.us.loyalty({ tx: this.tx, cardNumber, cardId }) }]);
       case 'radiant6-canada':
         return this.emit(() => [{ channel: 'vj', data: this.encoder.loyalty({ tx: this.tx, cardNumber, cardId }) }]);
+      case 'loa-player':
+        // Loyalty rides on the order document as a customer block, not an event.
+        this.loaCustomer = { brierleyId: '', mobileNumber: '', oktaId: '', loyaltyCard: cardNumber };
+        return this.emit(() => [this.loaMessage('OPEN')]);
       default:
         return assertNever(this.registerType);
     }
@@ -579,6 +667,8 @@ export class RegisterSession {
             return this.tenderBulloch(kind, amountCents);
           case 'radiant6-canada':
             return this.tenderCanada(kind, amountCents);
+        case 'loa-player':
+          return [this.loaMessage('TENDERED')];
           default:
             return assertNever(this.registerType);
         }

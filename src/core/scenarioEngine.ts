@@ -15,12 +15,12 @@
  *
  * Pure / browser-safe.
  */
-import type { Channel } from './posTypes';
+import type { WireChannel } from './posTypes';
 import type { SessionSnapshot } from './RegisterSession';
 import type { BasketAssertion, WireExpectation } from './scenario';
 
 export interface ObservedLine {
-  channel: Channel;
+  channel: WireChannel;
   text: string;
 }
 
